@@ -438,7 +438,13 @@ Resources:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
-                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubRepo}:ref:refs/heads/${GitHubBranch}'
+                # GitHub uses either "repo:owner/name:..." or, newer, "repo:owner@<id>/name@<id>:..."
+                token.actions.githubusercontent.com:sub:
+                  - !Sub 'repo:${GitHubRepo}:ref:refs/heads/${GitHubBranch}'
+                  - !Sub
+                    - 'repo:${Owner}@*/${Name}@*:ref:refs/heads/${GitHubBranch}'
+                    - Owner: !Select [0, !Split ['/', !Ref GitHubRepo]]
+                      Name: !Select [1, !Split ['/', !Ref GitHubRepo]]
       Policies:
         - PolicyName: deploy-site
           PolicyDocument:
