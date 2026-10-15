@@ -1,12 +1,29 @@
 // Tonight's sky: Moon phase, what's up, a cloud forecast with a GO / NO-GO verdict,
 // upcoming sky events, and the light / dark / red observing-mode switch.
 import { render, $, $$, esc, showError, toast, icon, fmtDate } from '../ui.js';
-import { planNight, verdict, nextOccurrence } from '../lib/astro.js';
+import { planNight, verdict, nextOccurrence, nightStart, formatTime, formatHour, zoneName } from '../lib/astro.js';
 import { currentTheme, setTheme, THEMES } from '../theme.js';
 import { getSession } from '../auth.js';
 
 const LOC_KEY = 'cosmos.location';
-const time = (d) => d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+const DEVICE_TZ = (() => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+})();
+let TZ = DEVICE_TZ; // set to the observing place's timezone in show()
+const time = (d) => formatTime(d, TZ);
+const validTz = (tz) => {
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+};
+const coordLabel = (l) => `${Math.abs(l.lat).toFixed(2)}°${l.lat >= 0 ? 'N' : 'S'}, ${Math.abs(l.lon).toFixed(2)}°${l.lon >= 0 ? 'E' : 'W'}`;
 
 function loadLocation() {
   try {
@@ -18,7 +35,12 @@ function loadLocation() {
 }
 function saveLocation(l) {
   // Rounded to ~1 km: plenty for the sky, kinder to privacy
-  const loc = { name: String(l.name || 'My location').slice(0, 60), lat: Math.round(l.lat * 100) / 100, lon: Math.round(l.lon * 100) / 100 };
+  const loc = {
+    name: String(l.name || 'My location').slice(0, 60),
+    lat: Math.round(l.lat * 100) / 100,
+    lon: Math.round(l.lon * 100) / 100,
+    tz: l.tz && validTz(l.tz) ? l.tz : '',
+  };
   try {
     localStorage.setItem(LOC_KEY, JSON.stringify(loc));
   } catch {}
@@ -42,17 +64,29 @@ function askLocation(message = '') {
 <header class="tonight-head"><div><p class="eyebrow">Tonight's sky</p><h1 style="margin:0">Where are you observing from?</h1></div>${modeSwitch()}</header>
 ${message ? `<div class="notice">${esc(message)}</div>` : ''}
 <div class="card-form" style="max-width:640px">
-  <p style="margin-top:0">Your location is saved <strong>only on this device</strong>. It's used to work out what's in your sky, and to fetch a cloud forecast from Open-Meteo.</p>
+  <p style="margin-top:0">Your location is saved <strong>only on this device</strong>, rounded to about 1 km. It's used to work out what's in your sky and to fetch a cloud forecast from Open-Meteo (UK postcodes are looked up with postcodes.io).</p>
   <div class="actions" style="margin-bottom:12px"><button class="btn primary" id="geo" type="button">Use my location</button></div>
   <div id="geo-note" role="status" aria-live="polite"></div>
   <form id="loc" class="form">
     <div class="loc-form">
-      <label for="town">Or search for a town<input id="town" name="town" required minlength="2" placeholder="e.g. Leeds" autocomplete="address-level2"></label>
+      <label for="town">Or search for a town or UK postcode<input id="town" name="town" required minlength="2" placeholder="e.g. Otley, or LS21 1BA" autocomplete="postal-code"></label>
       <button class="btn">Search</button>
     </div>
     <div class="form-error"></div>
     <div class="loc-results" id="results"></div>
   </form>
+  <details style="margin-top:22px">
+    <summary class="px small" style="cursor:pointer">Enter exact coordinates</summary>
+    <form id="coords" class="form" style="margin-top:14px">
+      <div class="two-col">
+        <label for="lat">Latitude<input id="lat" name="lat" inputmode="decimal" required placeholder="53.90"></label>
+        <label for="lon">Longitude<input id="lon" name="lon" inputmode="decimal" required placeholder="-1.69 (west is minus)"></label>
+      </div>
+      <label for="cname">Name <span class="muted">(optional)</span><input id="cname" name="cname" maxlength="60" placeholder="Back garden"></label>
+      <div class="form-error"></div>
+      <div class="actions"><button class="btn">Use these coordinates</button></div>
+    </form>
+  </details>
 </div>`);
   wireModeSwitch();
 
@@ -92,7 +126,10 @@ ${message ? `<div class="notice">${esc(message)}</div>` : ''}
     geoBtn.textContent = 'Finding you…';
     note('');
     navigator.geolocation.getCurrentPosition(
-      (pos) => show(saveLocation({ name: 'My location', lat: pos.coords.latitude, lon: pos.coords.longitude })),
+      async (pos) => {
+        const { latitude: lat, longitude: lon } = pos.coords;
+        show(saveLocation({ name: (await nearbyName(lat, lon)) || 'My location', lat, lon, tz: DEVICE_TZ }));
+      },
       (err) => {
         geoBtn.textContent = 'Use my location';
         geoBtn.disabled = err.code === 1;
@@ -105,7 +142,7 @@ ${message ? `<div class="notice">${esc(message)}</div>` : ''}
         );
         useSearch();
       },
-      { timeout: 15000, maximumAge: 3600000, enableHighAccuracy: false }
+      { timeout: 20000, maximumAge: 600000, enableHighAccuracy: true }
     );
   });
 
@@ -115,27 +152,98 @@ ${message ? `<div class="notice">${esc(message)}</div>` : ''}
     const box = $('.form-error', form);
     box.innerHTML = '';
     try {
-      const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(form.town.value.trim())}&count=6&language=en&format=json`);
-      if (!r.ok) throw new Error();
-      const { results = [] } = await r.json();
+      const q = form.town.value.trim();
+      const results = await searchPlaces(q);
       $('#results').innerHTML = results.length
         ? results
             .map(
               (p, i) =>
-                `<button type="button" class="btn ghost" data-i="${i}" style="justify-content:flex-start">${esc(p.name)}${p.admin1 ? `, ${esc(p.admin1)}` : ''} · ${esc(p.country_code || '')}</button>`
+                `<button type="button" class="btn ghost" data-i="${i}" style="justify-content:flex-start;text-align:left">${esc(p.label)}</button>`
             )
             .join('')
-        : '<p class="muted">No places found — try a nearby town.</p>';
+        : '<p class="muted">No places found — try a nearby town, a full UK postcode, or enter coordinates below.</p>';
       $$('#results [data-i]').forEach((b) =>
         b.addEventListener('click', () => {
           const p = results[Number(b.dataset.i)];
-          show(saveLocation({ name: p.name, lat: p.latitude, lon: p.longitude }));
+          show(saveLocation(p));
         })
       );
     } catch {
       box.innerHTML = `<div class="notice error">Couldn't search places right now. Check your connection.</div>`;
     }
   });
+
+  const cf = $('#coords');
+  cf.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const lat = parseFloat(cf.lat.value.replace(',', '.'));
+    const lon = parseFloat(cf.lon.value.replace(',', '.'));
+    if (!(Math.abs(lat) <= 90) || !(Math.abs(lon) <= 180)) {
+      $('.form-error', cf).innerHTML = '<div class="notice error">Latitude must be between -90 and 90, longitude between -180 and 180.</div>';
+      return;
+    }
+    show(saveLocation({ name: cf.cname.value.trim() || (await nearbyName(lat, lon)) || coordLabel({ lat, lon }), lat, lon }));
+  });
+}
+
+const UK_POSTCODE = /^([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})$/i;
+const UK_OUTCODE = /^[A-Z]{1,2}\d[A-Z\d]?$/i;
+const COORDS = /^(-?\d{1,2}(?:\.\d+)?)\s*[, ]\s*(-?\d{1,3}(?:\.\d+)?)$/;
+
+async function searchPlaces(q) {
+  const c = q.match(COORDS);
+  if (c) {
+    const lat = +c[1];
+    const lon = +c[2];
+    return [{ label: `${coordLabel({ lat, lon })} (coordinates)`, name: coordLabel({ lat, lon }), lat, lon }];
+  }
+  const pc = q.match(UK_POSTCODE);
+  if (pc || UK_OUTCODE.test(q)) {
+    const path = pc ? `postcodes/${encodeURIComponent(`${pc[1]} ${pc[2]}`)}` : `outcodes/${encodeURIComponent(q)}`;
+    const r = await fetch(`https://api.postcodes.io/${path}`);
+    if (r.ok) {
+      const { result: p } = await r.json();
+      if (p?.latitude) {
+        const area = pc ? [p.admin_ward, p.admin_district].filter(Boolean).join(', ') : (p.admin_district || []).slice(0, 2).join(', ');
+        const code = pc ? p.postcode : p.outcode;
+        return [{ label: `${code}${area ? ` · ${area}` : ''}`, name: area ? `${area.split(',')[0]} (${code})` : code, lat: p.latitude, lon: p.longitude, tz: 'Europe/London' }];
+      }
+    }
+  }
+  const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=en&format=json`);
+  if (!r.ok) throw new Error('search');
+  const { results = [] } = await r.json();
+  return results.map((p) => ({
+    label: [p.name, p.admin2 && p.admin2 !== p.name ? p.admin2 : '', p.admin1, p.country_code].filter(Boolean).join(', '),
+    name: p.name,
+    lat: p.latitude,
+    lon: p.longitude,
+    tz: p.timezone,
+  }));
+}
+
+/** A friendly name for a spot: nearest UK ward/district, if it's in the UK. */
+async function nearbyName(lat, lon) {
+  try {
+    const r = await fetch(`https://api.postcodes.io/postcodes?lat=${lat}&lon=${lon}&limit=1&radius=2000`);
+    if (!r.ok) return '';
+    const { result } = await r.json();
+    const p = result?.[0];
+    return p ? [p.admin_ward, p.admin_district].filter(Boolean).slice(0, 2).join(', ') : '';
+  } catch {
+    return '';
+  }
+}
+
+/** Fill in a timezone for places saved before timezones were stored. */
+async function ensureTz(loc) {
+  if (loc.tz && validTz(loc.tz)) return loc;
+  try {
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&timezone=auto&forecast_days=1&current=cloud_cover`);
+    const j = await r.json();
+    if (j.timezone && validTz(j.timezone)) return saveLocation({ ...loc, tz: j.timezone });
+  } catch {}
+  return { ...loc, tz: DEVICE_TZ };
 }
 
 // ---------- the night ----------
@@ -176,8 +284,7 @@ async function forecast(loc) {
 }
 
 function cloudChart(hourly, night) {
-  const from = new Date(night.darkStart.getTime() - 2 * 3600000);
-  from.setMinutes(0, 0, 0);
+  const from = new Date(Math.floor((night.darkStart.getTime() - 2 * 3600000) / 3600000) * 3600000);
   const to = new Date(night.darkEnd.getTime() + 3600000);
   const hours = hourly.filter((h) => h.time >= from && h.time <= to);
   if (!hours.length) return '<p class="muted">No forecast for tonight yet.</p>';
@@ -192,7 +299,7 @@ function cloudChart(hourly, night) {
     })
     .join('')}
 </div>
-<div class="cloud-axis" aria-hidden="true">${ticks.map((h) => `<span>${time(h.time).slice(0, 2)}</span>`).join('')}</div>
+<div class="cloud-axis" aria-hidden="true">${ticks.map((h) => `<span>${formatHour(h.time, TZ)}</span>`).join('')}</div>
 <p class="muted small" style="margin:6px 0 0">Taller bar = more cloud · faded bars are twilight · forecast by <a href="https://open-meteo.com/" rel="noopener" target="_blank">Open-Meteo</a></p>`;
 }
 
@@ -251,21 +358,24 @@ async function eventsHtml() {
 }
 
 async function show(loc) {
-  // Before noon we still mean the night that's just happening; after noon, tonight
-  const ref = new Date();
-  if (ref.getHours() < 12) ref.setDate(ref.getDate() - 1);
-  const night = planNight(ref, loc.lat, loc.lon);
+  loc = await ensureTz(loc);
+  TZ = loc.tz;
+  // Tonight in the observing place's own timezone (before noon there, it's still last night)
+  const start = nightStart(TZ);
+  const ref = new Date(start.getTime() + 6 * 3600000); // 6pm local
+  const night = planNight(ref, loc.lat, loc.lon, { start });
   const moon = night.moon;
   const ev = await eventsHtml();
 
   render(`
 <header class="tonight-head">
   <div>
-    <p class="eyebrow">${esc(ref.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }))} · ${esc(loc.name)}</p>
+    <p class="eyebrow">${esc(ref.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: TZ }))} · ${esc(loc.name)}</p>
     <h1 style="margin:0">Tonight's sky</h1>
   </div>
   <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">${modeSwitch()}<button class="btn small" id="change-loc" type="button">Change place</button></div>
 </header>
+<p class="muted small" style="margin:-12px 0 24px">${esc(coordLabel(loc))} · times in ${esc(zoneName(ref, TZ))}${TZ !== DEVICE_TZ ? ` (${esc(TZ.replace(/_/g, ' '))})` : ''} · not quite right? <a href="#" id="change-loc-2">Set a more exact place</a></p>
 
 <div class="tonight-grid">
   <div style="display:flex;flex-direction:column;gap:28px;min-width:0">
@@ -312,6 +422,11 @@ async function show(loc) {
 
   wireModeSwitch();
   $('#change-loc').addEventListener('click', () => askLocation());
+  $('#change-loc-2').addEventListener('click', (e) => {
+    e.preventDefault();
+    askLocation();
+    setTimeout(() => $('details')?.setAttribute('open', ''), 0);
+  });
   $$('[data-ev]').forEach((b) =>
     b.addEventListener('click', () => {
       const e = ev.upcoming[Number(b.dataset.ev)];

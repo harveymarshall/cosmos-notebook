@@ -67,3 +67,24 @@ test('yearly events roll over to next year once they have passed', () => {
   assert.equal(nextOccurrence('2027-08-02', new Date(2026, 9, 14)).getFullYear(), 2027);
   assert.equal(nextOccurrence('2025-08-02', new Date(2026, 9, 14)), null);
 });
+
+test('times are shown in the observing place’s own timezone, with am/pm', async () => {
+  const { formatTime, formatHour, nightStart, tzOffsetMs, zoneName } = await import('../src/astro.js');
+  const t = new Date('2026-10-15T20:30:00Z');
+  assert.equal(formatTime(t, 'Europe/London'), '9:30 pm', 'British Summer Time');
+  assert.equal(formatTime(new Date('2026-12-15T20:30:00Z'), 'Europe/London'), '8:30 pm', 'winter, GMT');
+  assert.equal(formatTime(t, 'America/New_York'), '4:30 pm');
+  assert.equal(formatTime(new Date('2026-10-15T23:05:00Z'), 'Europe/London'), '12:05 am');
+  assert.equal(formatHour(new Date('2026-10-15T20:00:00Z'), 'Europe/London'), '9pm');
+  assert.equal(tzOffsetMs('Europe/London', t), 3600000);
+  assert.equal(nightStart('Europe/London', t).toISOString(), '2026-10-15T11:00:00.000Z', 'tonight starts at local noon');
+  assert.equal(nightStart('Europe/London', new Date('2026-10-16T01:30:00Z')).toISOString(), '2026-10-15T11:00:00.000Z', 'at 2:30am it is still last night');
+  assert.equal(nightStart('Australia/Sydney', t).toISOString(), '2026-10-15T01:00:00.000Z', '7:30am in Sydney: still last night');
+  assert.match(zoneName(t, 'Europe/London'), /BST|GMT\+1/);
+});
+
+test('planNight uses a given start time', async () => {
+  const { planNight, nightStart } = await import('../src/astro.js');
+  const night = planNight(new Date(), 40.7, -74.0, { start: nightStart('America/New_York', new Date('2026-12-01T18:00:00Z')) });
+  assert.ok(night.darkStart > new Date('2026-12-01T21:00:00Z') && night.darkStart < new Date('2026-12-01T23:30:00Z'), `NY dark from ${night.darkStart.toISOString()}`);
+});

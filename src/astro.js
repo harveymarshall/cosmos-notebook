@@ -123,10 +123,10 @@ const STEP_MIN = 10;
  * Plan a night: the dark window (Sun more than 12° below the horizon), and when each
  * planet and bright object is best placed. `date` is any moment on the evening in question.
  */
-export function planNight(date, lat, lon) {
-  // Search from local noon on this day for 24 hours
-  const start = new Date(date);
-  start.setHours(12, 0, 0, 0);
+export function planNight(date, lat, lon, { start: startAt } = {}) {
+  // Search from local noon on this day for 24 hours (pass `start` to use another timezone's noon)
+  const start = startAt ? new Date(startAt) : new Date(date);
+  if (!startAt) start.setHours(12, 0, 0, 0);
   const samples = [];
   for (let m = 0; m <= 24 * 60; m += STEP_MIN) {
     const t = new Date(start.getTime() + m * 60000);
@@ -208,4 +208,54 @@ export function nextOccurrence(when, from = new Date()) {
   let t = new Date(from.getFullYear(), m - 1, d);
   if (t < today) t = new Date(from.getFullYear() + 1, m - 1, d);
   return t;
+}
+
+// ---------- timezones ----------
+// All times on Tonight's sky are shown in the observing place's own timezone.
+
+/** Milliseconds that `tz` is ahead of UTC at instant `t`. */
+export function tzOffsetMs(tz, t) {
+  const d = new Date(t);
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      .formatToParts(d)
+      .map((p) => [p.type, p.value])
+  );
+  const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour % 24, +parts.minute, +parts.second);
+  return asUtc - Math.floor(d.getTime() / 1000) * 1000;
+}
+
+/** The calendar date (y, m, d) and hour at instant `t` in `tz`. */
+export function zonedParts(tz, t = new Date()) {
+  const local = new Date(new Date(t).getTime() + tzOffsetMs(tz, t));
+  return { y: local.getUTCFullYear(), m: local.getUTCMonth() + 1, d: local.getUTCDate(), hour: local.getUTCHours() };
+}
+
+/**
+ * The instant of local noon that starts "tonight" in `tz`: today's noon after midday,
+ * yesterday's noon before it (so at 2am you still see the night you're in).
+ */
+export function nightStart(tz, now = new Date()) {
+  const p = zonedParts(tz, now);
+  const day = p.hour < 12 ? Date.UTC(p.y, p.m - 1, p.d - 1, 12) : Date.UTC(p.y, p.m - 1, p.d, 12);
+  // Correct for the zone's offset at that moment (twice, to settle across DST changes)
+  let t = day - tzOffsetMs(tz, day);
+  t = day - tzOffsetMs(tz, t);
+  return new Date(t);
+}
+
+/** "9:30 pm" in the given timezone. */
+export function formatTime(d, tz) {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true }).format(d).replace(/\u202f/g, ' ');
+}
+
+/** "9pm" — short hour label for chart axes. */
+export function formatHour(d, tz) {
+  return formatTime(d, tz).replace(':00', '').replace(' ', '');
+}
+
+/** Short timezone name, e.g. "BST" or "GMT+1". */
+export function zoneName(d, tz) {
+  const part = new Intl.DateTimeFormat('en-GB', { timeZone: tz, timeZoneName: 'short' }).formatToParts(d).find((p) => p.type === 'timeZoneName');
+  return part ? part.value : tz;
 }
