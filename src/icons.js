@@ -2,7 +2,7 @@
 // Shared by the site builder and the app.
 
 const ICONS = {
-  planet: [25, 13, 'M24 0h1v1h-1zM10 1h5v1h-5zM21 1h4v1h-4zM9 2h7v1h-7zM18 2h3v1h-3zM24 2h1v1h-1zM8 3h9v1h-9zM24 3h1v1h-1zM7 4h11v1h-11zM22 4h3v1h-3zM7 5h9v1h-9zM19 5h3v1h-3zM7 6h6v1h-6zM16 6h3v1h-3zM3 7h3v1h-3zM7 7h3v1h-3zM13 7h5v1h-5zM0 8h3v1h-3zM10 8h8v1h-8zM0 9h1v1h-1zM7 9h10v1h-10zM0 10h1v1h-1zM4 10h3v1h-3zM9 10h7v1h-7zM0 11h4v1h-4zM10 11h5v1h-5zM0 12h1v1h-1z'], // Saturn with a slightly tilted ring
+  planet: [23, 11, 'M9 0h5v1h-5zM22 0h1v1h-1zM8 1h7v1h-7zM19 1h4v1h-4zM7 2h9v1h-9zM18 2h1v1h-1zM22 2h1v1h-1zM6 3h10v1h-10zM19 3h3v1h-3zM6 4h7v1h-7zM16 4h3v1h-3zM6 5h4v1h-4zM13 5h4v1h-4zM6 6h1v1h-1zM10 6h7v1h-7zM1 7h3v1h-3zM7 7h10v1h-10zM0 8h1v1h-1zM4 8h12v1h-12zM0 9h4v1h-4zM8 9h7v1h-7zM0 10h1v1h-1zM9 10h5v1h-5z'], // Saturn with a slightly tilted ring
   atom: [15, 15, 'M5 0h5v1h-5zM3 1h2v1h-2zM10 1h2v1h-2zM2 2h1v1h-1zM10 2h4v1h-4zM1 3h1v1h-1zM10 3h4v1h-4zM1 4h1v1h-1zM10 4h4v1h-4zM0 5h1v1h-1zM14 5h1v1h-1zM0 6h1v1h-1zM6 6h3v1h-3zM14 6h1v1h-1zM0 7h1v1h-1zM6 7h3v1h-3zM14 7h1v1h-1zM0 8h1v1h-1zM6 8h3v1h-3zM14 8h1v1h-1zM0 9h1v1h-1zM14 9h1v1h-1zM1 10h4v1h-4zM13 10h1v1h-1zM1 11h4v1h-4zM13 11h1v1h-1zM1 12h4v1h-4zM12 12h1v1h-1zM3 13h2v1h-2zM10 13h2v1h-2zM5 14h5v1h-5z'],
   telescope: [15, 13, 'M12 0h3v1h-3zM10 1h5v1h-5zM8 2h6v1h-6zM6 3h6v1h-6zM4 4h6v1h-6zM2 5h6v1h-6zM2 6h4v1h-4zM6 7h1v1h-1zM5 8h3v1h-3zM4 9h1v1h-1zM6 9h1v1h-1zM8 9h1v1h-1zM3 10h1v1h-1zM6 10h1v1h-1zM9 10h1v1h-1zM2 11h1v1h-1zM6 11h1v1h-1zM10 11h1v1h-1zM1 12h1v1h-1zM6 12h1v1h-1zM11 12h1v1h-1z'],
   star: [13, 13, 'M6 0h1v1h-1zM6 1h1v1h-1zM5 2h3v1h-3zM5 3h3v1h-3zM4 4h5v1h-5zM2 5h9v1h-9zM0 6h13v1h-13zM2 7h9v1h-9zM4 8h5v1h-5zM5 9h3v1h-3zM5 10h3v1h-3zM6 11h1v1h-1zM6 12h1v1h-1z'],
