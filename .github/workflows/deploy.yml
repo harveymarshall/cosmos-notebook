@@ -23,15 +23,31 @@ jobs:
         with:
           node-version: 22
 
+      - name: Load deploy settings
+        # Repository variables win; otherwise use the values in deploy.env
+        env:
+          V_AWS_REGION: ${{ vars.AWS_REGION }}
+          V_AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          V_S3_BUCKET: ${{ vars.S3_BUCKET }}
+          V_CLOUDFRONT_DISTRIBUTION_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+          V_API_FUNCTION_NAME: ${{ vars.API_FUNCTION_NAME }}
+          V_COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
+          V_SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          [ -f deploy.env ] && set -a && . ./deploy.env && set +a
+          for k in AWS_REGION AWS_ROLE_ARN S3_BUCKET CLOUDFRONT_DISTRIBUTION_ID API_FUNCTION_NAME COGNITO_CLIENT_ID SITE_URL; do
+            v="V_$k"; val="${!v:-${!k:-}}"
+            if [ -z "$val" ]; then echo "::error::$k is not set - add it to deploy.env or as a repository variable"; exit 1; fi
+            echo "$k=$val" >> "$GITHUB_ENV"
+          done
+
       - name: Run tests
         run: node --test api/test/*.test.js test/*.test.js
 
       - name: Build site
         run: node build.js
         env:
-          SITE_URL: ${{ vars.SITE_URL }}
-          COGNITO_REGION: ${{ vars.AWS_REGION }}
-          COGNITO_CLIENT_ID: ${{ vars.COGNITO_CLIENT_ID }}
+          COGNITO_REGION: ${{ env.AWS_REGION }}
 
       - name: Package API
         run: cd api && zip -qr ../lambda.zip index.mjs package.json src -x 'src/fake-dynamo.js'
@@ -39,28 +55,26 @@ jobs:
       - name: Sign in to AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Update API code
         run: |
-          aws lambda update-function-code \
-            --function-name "${{ vars.API_FUNCTION_NAME }}" \
-            --zip-file fileb://lambda.zip >/dev/null
-          aws lambda wait function-updated --function-name "${{ vars.API_FUNCTION_NAME }}"
+          aws lambda update-function-code --function-name "$API_FUNCTION_NAME" --zip-file fileb://lambda.zip >/dev/null
+          aws lambda wait function-updated --function-name "$API_FUNCTION_NAME"
 
       - name: Upload website
         run: |
           # Styles, scripts and images cache for an hour; pages and data refresh within a minute
-          aws s3 sync dist "s3://${{ vars.S3_BUCKET }}" --delete \
+          aws s3 sync dist "s3://$S3_BUCKET" --delete \
             --exclude "*.html" --exclude "*.xml" --exclude "*.txt" --exclude "*.json" --exclude "config.js" \
             --cache-control "public,max-age=3600"
-          aws s3 sync dist "s3://${{ vars.S3_BUCKET }}" --delete \
+          aws s3 sync dist "s3://$S3_BUCKET" --delete \
             --exclude "*" --include "*.html" --include "*.xml" --include "*.txt" --include "*.json" --include "config.js" \
             --cache-control "public,max-age=60"
 
       - name: Refresh CloudFront
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
-            --paths "/*" >/dev/null
+        run: aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --paths "/*" >/dev/null
+
+      - name: Done
+        run: echo "Live at $SITE_URL"
