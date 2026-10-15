@@ -22,10 +22,10 @@ aws lambda wait function-updated --function-name "$API_FUNCTION_NAME"
 echo "API updated"
 
 aws s3 sync dist "s3://$S3_BUCKET" --delete \
-  --exclude "*.html" --exclude "*.xml" --exclude "*.txt" --exclude "*.json" --exclude "config.js" \
-  --cache-control "public,max-age=3600"
+  --exclude "*.html" --exclude "*.xml" --exclude "*.txt" --exclude "*.json" --exclude "*.js" --exclude "*.css" \
+  --cache-control "public,max-age=86400"
 aws s3 sync dist "s3://$S3_BUCKET" --delete \
-  --exclude "*" --include "*.html" --include "*.xml" --include "*.txt" --include "*.json" --include "config.js" \
+  --exclude "*" --include "*.html" --include "*.xml" --include "*.txt" --include "*.json" --include "*.js" --include "*.css" \
   --cache-control "public,max-age=60"
 aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --paths "/*" >/dev/null
 

@@ -22,6 +22,21 @@ const SHOW_DRAFTS = process.argv.includes('--drafts');
 const site = JSON.parse(await readFile(join(ROOT, 'content/site.json'), 'utf8'));
 const siteUrl = (process.env.SITE_URL || site.siteUrl || '').replace(/\/$/, '');
 const esc = escapeHtml;
+// Changes whenever the stylesheet or app scripts change, so browsers never mix old and new files
+const { createHash } = await import('node:crypto');
+const hashOf = async (dir) => {
+  const h = createHash('sha256');
+  const walk = async (d) => {
+    for (const e of (await readdir(d, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+      const f = join(d, e.name);
+      if (e.isDirectory()) await walk(f);
+      else h.update(await readFile(f));
+    }
+  };
+  await walk(dir);
+  return h;
+};
+const ASSET_VERSION = (await hashOf(join(ROOT, 'public'))).update((await hashOf(join(ROOT, 'web'))).digest('hex')).update((await hashOf(join(ROOT, 'src'))).digest('hex')).digest('hex').slice(0, 10);
 
 // ---------- content ----------
 
@@ -100,11 +115,11 @@ ${noindex ? '<meta name="robots" content="noindex">' : `<link rel="canonical" hr
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jersey+10&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=VT323&display=swap">
-<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/styles.css?v=${ASSET_VERSION}">
 <script>try{var t=localStorage.getItem('cosmos.theme');if(t==='light'||t==='dark'||t==='red')document.documentElement.dataset.theme=t}catch(e){}</script>
 <script src="/config.js"></script>
-<script type="module" src="/js/nav.js"></script>
-${script ? `<script type="module" src="/js/pages/${script}.js"></script>` : ''}
+<script type="module" src="/js/nav.js?v=${ASSET_VERSION}"></script>
+${script ? `<script type="module" src="/js/pages/${script}.js?v=${ASSET_VERSION}"></script>` : ''}
 ${hasMath ? MATH_HEAD : ''}
 </head>
 <body>
