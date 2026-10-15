@@ -1,5 +1,9 @@
-import { render, $, $$, esc, requireLogin, showError, busy, toast, kindTag, fmtDate, renderMarkdown, params } from '../ui.js';
-import { get, post } from '../api.js';
+// The admin console. This file is NOT part of the public website: the API sends it only
+// to signed-in members of the Cognito "admins" group (GET /api/admin/console), and
+// web/js/admin-loader.js runs it. Imports use site-absolute paths; the loader turns
+// them into full URLs.
+import { render, $, $$, esc, requireLogin, showError, busy, toast, kindTag, fmtDate, renderMarkdown, params } from '/js/ui.js';
+import { get, post } from '/js/api.js';
 
 const session = requireLogin();
 const TABS = [
@@ -34,11 +38,6 @@ const card = (s, status) => `<article class="review card-form" data-id="${esc(s.
 </article>`;
 
 async function main() {
-  const { user } = await get('/me');
-  if (!user.isAdmin) {
-    render(`<div class="notice">This page is for admins. To make someone an admin, add them to the <code>admins</code> group in the AWS Cognito console (see the README).</div>`);
-    return;
-  }
   const status = params().get('status') || 'pending';
   const { submissions } = await get(`/admin/submissions?status=${status}`);
   render(`

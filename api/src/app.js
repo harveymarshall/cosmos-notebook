@@ -5,6 +5,7 @@
 // here; the verified claims arrive in event.requestContext.authorizer.jwt.claims.
 
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { HttpError, LIMITS, ITEM_ID, ENTITY_ID, POST_ID, str, oneOf, bool, date, url, param } from './validate.js';
 import { NotFound } from './store.js';
 
@@ -55,9 +56,12 @@ export function createApp({ store, now = () => new Date().toISOString(), makeId 
     return profile;
   };
   const postIdFor = (kind, sub, id) => `${kind}~${sub}~${id}`;
+  // Admin routes answer 404 to everyone else, exactly like a route that doesn't exist,
+  // so nobody can tell there is an admin area at all.
   const canSeeAdmin = (user) => {
-    if (!user?.isAdmin) throw new HttpError(403, 'Admins only');
+    if (!user?.isAdmin) throw new HttpError(404, 'Not found');
   };
+  let consoleCode;
 
   /** Publish, update or withdraw the community post for a progress item or observation. */
   async function syncPost({ user, kind, id, published, title, body, status, meta }) {
@@ -347,6 +351,12 @@ export function createApp({ store, now = () => new Date().toISOString(), makeId 
   }, 201);
 
   // ---------- admin ----------
+  route('GET', '/api/admin/console', { auth: true }, async ({ user }) => {
+    canSeeAdmin(user);
+    consoleCode ??= readFileSync(new URL('./console/admin.js', import.meta.url), 'utf8');
+    return { code: consoleCode };
+  });
+
   route('GET', '/api/admin/submissions', { auth: true }, async ({ user, query }) => {
     canSeeAdmin(user);
     const status = oneOf(query, 'status', ['pending', 'approved', 'rejected'], { fallback: 'pending' });

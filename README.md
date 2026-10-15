@@ -88,7 +88,9 @@ From now on, **every push to GitHub deploys automatically.**
 ### Step G — Make yourself an admin
 1. Sign up on your live site first.
 2. AWS console → **Cognito → User pools → cosmos-notebook-members → Groups → admins → Add user to group** → pick your email.
-3. **Log out and back in** on the site. A **Review** link appears in the header.
+3. **Log out and back in** on the site. An **Admin** link appears in the header.
+
+The admin console is hidden from everyone else: there is no link, `/admin/` shows the normal "page not found", and the console's code isn't on the public site at all — the API sends it only to members of the `admins` group (`api/src/console/admin.js`). Admin API routes answer 404 to non-admins.
 
 Or with the AWS CLI:
 
@@ -159,7 +161,7 @@ infra/              the CloudFormation template
 ## Security notes
 
 - Passwords are handled only by Cognito, over HTTPS; the site never stores them.
-- The API checks every login token in API Gateway, before your code runs. Members can only read and change their own notebook; admin actions check the `admins` group.
+- The API checks every login token in API Gateway, before your code runs. Members can only read and change their own notebook; admin actions check the `admins` group and answer 404 to anyone else.
 - All member writing is escaped before display, and links can only point to web addresses (no `javascript:` links).
 - Log-in tokens are kept in the browser's local storage and expire after an hour, renewing automatically for up to 30 days.
 

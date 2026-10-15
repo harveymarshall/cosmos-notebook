@@ -194,7 +194,7 @@ test('submissions are vetted by admins before reaching the library', async () =>
   const id = r.data.submission.id;
   assert.equal((await call('GET', '/api/library')).data.items.length, 0, 'not public until approved');
 
-  assert.equal((await call('GET', '/api/admin/submissions', { as: BOB })).status, 403);
+  assert.equal((await call('GET', '/api/admin/submissions', { as: BOB })).status, 404, 'hidden from members');
   r = await call('GET', '/api/admin/submissions', { as: ADMIN });
   assert.equal(r.data.submissions.length, 1);
 
@@ -230,7 +230,7 @@ test('admins can remove posts', async () => {
   await name(call, ALICE, 'Alice');
   const r = await call('POST', '/api/me/observations', { as: ALICE, body: { title: 'Spam', notes: 'buy stuff', published: true } });
   const postId = r.data.observation.postId;
-  assert.equal((await call('DELETE', `/api/admin/posts/${postId}`, { as: BOB })).status, 403);
+  assert.equal((await call('DELETE', `/api/admin/posts/${postId}`, { as: BOB })).status, 404);
   assert.equal((await call('DELETE', `/api/admin/posts/${postId}`, { as: ADMIN })).status, 200);
   assert.equal((await call('GET', '/api/feed')).data.posts.length, 0);
 });
@@ -270,4 +270,15 @@ test('journal entries: one per session, private, removed with the progress', asy
   await call('DELETE', base, { as: ALICE });
   assert.equal((await call('GET', `${base}/entries`, { as: ALICE })).data.entries.length, 0, 'cleared with progress');
   assert.equal((await call('GET', '/api/me/progress/weigh-jupiter-2/entries', { as: ALICE })).data.entries.length, 1);
+});
+
+test('the admin console is only sent to admins', async () => {
+  const { call } = setup();
+  const hidden = await call('GET', '/api/admin/console', { as: BOB });
+  assert.equal(hidden.status, 404);
+  assert.equal(JSON.stringify(hidden.data), JSON.stringify((await call('GET', '/api/nope', { as: BOB })).data), 'looks like any missing page');
+  assert.equal((await call('GET', '/api/admin/console')).status, 401);
+  const r = await call('GET', '/api/admin/console', { as: ADMIN });
+  assert.equal(r.status, 200);
+  assert.match(r.data.code, /Review queue/);
 });

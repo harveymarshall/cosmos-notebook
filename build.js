@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Builds the website into ./dist:
 //   - the shared library (experiments, books, resources) from the files in ./content
-//   - the app pages (log in, My notebook, community, submissions, admin) from ./web
+//   - the app pages (log in, My notebook, community, submissions) from ./web
+//     (the admin console is not built here: the API serves it to admins only)
 // No dependencies — just Node.js 18+.   Usage:  node build.js [--drafts]
 //
 // Settings for sign-in come from environment variables at build time (see README):
@@ -472,7 +473,6 @@ await appPage('/submit/', {
   script: 'submit',
   intro: `<header class="page-head"><h1>Suggest an addition</h1><p class="lede">Know a great home experiment, book, video or tool? Suggest it here. An admin checks every suggestion before it joins the library.</p></header>`,
 });
-await appPage('/admin/', { title: 'Review queue', script: 'admin', wide: true });
 await appPage('/tonight/', { title: "Tonight's sky", script: 'tonight', wide: true });
 
 // 404
@@ -499,7 +499,7 @@ ${urls.map((u) => `  <url><loc>${abs(u)}</loc></url>`).join('\n')}
 );
 await write(
   'robots.txt',
-  `User-agent: *\nAllow: /\nDisallow: /notebook/\nDisallow: /admin/\nDisallow: /api/\nSitemap: ${abs('/sitemap.xml')}\n`
+  `User-agent: *\nAllow: /\nDisallow: /notebook/\nDisallow: /api/\nSitemap: ${abs('/sitemap.xml')}\n`
 );
 
 console.log(

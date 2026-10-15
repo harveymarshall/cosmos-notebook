@@ -17,11 +17,15 @@ function update() {
     slot.innerHTML = `<a class="btn small" href="/login/?next=${encodeURIComponent(here)}">Log in</a>`;
     return;
   }
-  slot.innerHTML = `${isAdmin() ? `<a href="/admin/"${here.startsWith('/admin/') ? ' aria-current="page"' : ''}>Review</a>` : ''}<a class="btn small primary" href="/notebook/"${
+  // The Admin link is only drawn for admins; the API refuses admin requests from anyone else.
+  slot.innerHTML = `${isAdmin() ? `<a href="/admin/"${here.startsWith('/admin/') ? ' aria-current="page"' : ''}>Admin</a>` : ''}<a class="btn small primary" href="/notebook/"${
     here.startsWith('/notebook/') ? ' aria-current="page"' : ''
   }>My notebook</a>`;
 }
 
 update();
+if (/^\/admin\/?$/.test(location.pathname) && authEnabled() && isAdmin()) {
+  import('./admin-loader.js').then((m) => m.mountConsole()).catch(() => {});
+}
 window.addEventListener('cosmos:auth', update);
 window.addEventListener('storage', (e) => e.key === 'cosmos.session' && update());
