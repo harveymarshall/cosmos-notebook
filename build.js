@@ -396,7 +396,7 @@ await write(
 // Home
 const homeBody = `<section class="hero">
   <div class="hero-copy">
-    <p class="eyebrow">§01 — A community lab notebook</p>
+    <p class="eyebrow">A community lab notebook</p>
     <h1>${esc(site.tagline.split(' — ')[0])}.</h1>
     <p class="lede">Recreate famous physics experiments at home, keep your data in a private notebook, log your nights under the stars, and share what you find.</p>
     <div class="hero-actions" id="hero-actions">
@@ -406,7 +406,7 @@ const homeBody = `<section class="hero">
     <p class="readout">${experiments.length} EXPERIMENTS · ${books.length} BOOKS · ${resources.length} TOOLS · £0 TO JOIN</p>
   </div>
   <figure class="hero-figure win">
-    <div class="win-bar"><span>obs_log · Jupiter system</span><span class="fill dither" aria-hidden="true"></span></div>
+    <div class="win-bar"><span>Jupiter and its moons</span><span class="fill dither" aria-hidden="true"></span></div>
     <div class="win-body" style="display:flex;flex-direction:column;gap:14px;background:var(--paper)">
       <div class="jupiter-view" role="img" aria-label="Jupiter with its four largest moons in a line, as seen through binoculars">
         <span class="jv-moon" aria-hidden="true"><i></i>Callisto</span>
@@ -432,7 +432,7 @@ const homeBody = `<section class="hero">
 </section>
 
 <section>
-  <div class="section-row"><h2 class="section-title">§02 The road map</h2><a href="/plan/">Full plan →</a></div>
+  <div class="section-row"><h2 class="section-title">The road map</h2><a href="/plan/">Full plan →</a></div>
   <ol class="road">${site.phases
     .map(
       (p) =>
@@ -444,12 +444,12 @@ const homeBody = `<section class="hero">
 </section>
 
 <section>
-  <div class="section-row"><h2 class="section-title">§03 Experiments</h2><a href="/library/">Whole library →</a></div>
+  <div class="section-row"><h2 class="section-title">Experiments</h2><a href="/library/">Whole library →</a></div>
   <div class="grid">${experiments.slice(0, 6).map(experimentCard).join('')}</div>
 </section>
 
 <section>
-  <div class="section-row"><h2 class="section-title">§04 From the community</h2><a href="/community/">See all →</a></div>
+  <div class="section-row"><h2 class="section-title">From the community</h2><a href="/community/">See all →</a></div>
   <div id="home-feed" class="grid"><p class="muted">Loading the latest write-ups…</p></div>
 </section>`;
 await write('index.html', layout({ title: '', path: '/', body: homeBody, wide: true, script: 'home' }));

@@ -323,7 +323,6 @@ section + section { margin-top: 40px; }
 
 .prose { font-size: 1rem; line-height: 1.75; overflow-wrap: break-word; }
 .prose h2 { font-size: 1.2rem; text-transform: uppercase; margin-top: 2.2em; scroll-margin-top: 90px; display: flex; align-items: baseline; gap: 10px; }
-.prose h2::before { content: '§'; font-family: var(--lcd); font-size: 1.5rem; font-weight: 400; }
 .prose h3 { font-size: 1rem; text-transform: uppercase; margin-top: 1.6em; }
 .prose p, .prose ul, .prose ol { margin: 0 0 1em; }
 .prose li { margin: .25em 0; }
