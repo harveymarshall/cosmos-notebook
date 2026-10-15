@@ -43,7 +43,8 @@ function askLocation(message = '') {
 ${message ? `<div class="notice">${esc(message)}</div>` : ''}
 <div class="card-form" style="max-width:640px">
   <p style="margin-top:0">Your location is saved <strong>only on this device</strong>. It's used to work out what's in your sky, and to fetch a cloud forecast from Open-Meteo.</p>
-  <div class="actions" style="margin-bottom:22px"><button class="btn primary" id="geo" type="button">Use my location</button></div>
+  <div class="actions" style="margin-bottom:12px"><button class="btn primary" id="geo" type="button">Use my location</button></div>
+  <div id="geo-note" role="status" aria-live="polite"></div>
   <form id="loc" class="form">
     <div class="loc-form">
       <label for="town">Or search for a town<input id="town" name="town" required minlength="2" placeholder="e.g. Leeds" autocomplete="address-level2"></label>
@@ -55,16 +56,56 @@ ${message ? `<div class="notice">${esc(message)}</div>` : ''}
 </div>`);
   wireModeSwitch();
 
-  $('#geo').addEventListener('click', () => {
-    if (!navigator.geolocation) return toast("This browser can't share its location — search for a town instead.", 'error');
-    $('#geo').disabled = true;
+  const geoBtn = $('#geo');
+  const note = (html) => {
+    $('#geo-note').innerHTML = html ? `<div class="notice" style="margin:0 0 22px">${html}</div>` : '';
+  };
+  const blockedHelp =
+    'Location is <strong>blocked for this site</strong> in your browser, so it can’t be shared. Search for your town below instead — it works just as well. ' +
+    '<span class="muted small">To allow it: in Safari, choose <em>Settings for this website → Location</em>; in Chrome, tap the icon left of the address and turn on <em>Location</em>. On a Mac, Location Services for your browser must also be on (System Settings → Privacy &amp; Security).</span>';
+  const useSearch = () => setTimeout(() => $('#town')?.focus(), 50);
+
+  if (!navigator.geolocation || !window.isSecureContext) {
+    geoBtn.disabled = true;
+    note("This browser can’t share its location. Search for your town below instead.");
+  } else if (navigator.permissions?.query) {
+    navigator.permissions
+      .query({ name: 'geolocation' })
+      .then((p) => {
+        const sync = () => {
+          if (p.state === 'denied') {
+            geoBtn.disabled = true;
+            note(blockedHelp);
+          } else {
+            geoBtn.disabled = false;
+            note('');
+          }
+        };
+        sync();
+        p.onchange = sync;
+      })
+      .catch(() => {});
+  }
+
+  geoBtn.addEventListener('click', () => {
+    geoBtn.disabled = true;
+    geoBtn.textContent = 'Finding you…';
+    note('');
     navigator.geolocation.getCurrentPosition(
       (pos) => show(saveLocation({ name: 'My location', lat: pos.coords.latitude, lon: pos.coords.longitude })),
-      () => {
-        $('#geo').disabled = false;
-        toast('Location not available — search for a town instead.', 'error');
+      (err) => {
+        geoBtn.textContent = 'Use my location';
+        geoBtn.disabled = err.code === 1;
+        note(
+          err.code === 1
+            ? blockedHelp
+            : err.code === 3
+              ? 'Finding your location took too long. Try again, or search for your town below.'
+              : 'Your device couldn’t work out where you are right now. Search for your town below instead.'
+        );
+        useSearch();
       },
-      { timeout: 15000, maximumAge: 3600000 }
+      { timeout: 15000, maximumAge: 3600000, enableHighAccuracy: false }
     );
   });
 
