@@ -1,0 +1,30 @@
+[
+  {
+    "id": "stellarium",
+    "title": "Stellarium",
+    "summary": "Free planetarium app: see what's in your sky tonight and identify Jupiter's moons.",
+    "track": "astro",
+    "link": "https://stellarium.org"
+  },
+  {
+    "id": "phet-simulations",
+    "title": "PhET Interactive Simulations",
+    "summary": "Free physics simulations from the University of Colorado — orbits, photons, atoms and more.",
+    "track": "both",
+    "link": "https://phet.colorado.edu"
+  },
+  {
+    "id": "zooniverse",
+    "title": "Zooniverse",
+    "summary": "Do real citizen science, such as classifying galaxies for research teams.",
+    "track": "astro",
+    "link": "https://www.zooniverse.org"
+  },
+  {
+    "id": "openlearn",
+    "title": "OpenLearn",
+    "summary": "The Open University's free short courses, including introductions to astronomy and quantum physics.",
+    "track": "both",
+    "link": "https://www.open.edu/openlearn/"
+  }
+]

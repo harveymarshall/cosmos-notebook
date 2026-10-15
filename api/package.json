@@ -1,0 +1,7 @@
+{
+  "name": "cosmos-notebook-api",
+  "private": true,
+  "type": "module",
+  "description": "The Cosmos Notebook API (one AWS Lambda). Uses the AWS SDK built into the Lambda runtime.",
+  "main": "index.mjs"
+}

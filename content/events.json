@@ -1,0 +1,9 @@
+[
+  { "id": "quadrantids", "title": "Quadrantids meteor shower", "when": "01-03", "note": "Peak around this night · short, sharp peak before dawn" },
+  { "id": "lyrids", "title": "Lyrids meteor shower", "when": "04-22", "note": "Peak around this night · best after midnight" },
+  { "id": "perseids", "title": "Perseids meteor shower", "when": "08-12", "note": "Peak around this night · the summer favourite" },
+  { "id": "orionids", "title": "Orionids meteor shower", "when": "10-21", "note": "Peak around this night · best after midnight" },
+  { "id": "leonids", "title": "Leonids meteor shower", "when": "11-17", "note": "Peak around this night · modest rates" },
+  { "id": "geminids", "title": "Geminids meteor shower", "when": "12-14", "note": "Peak around this night · the year's best shower" },
+  { "id": "eclipse-2027-08", "title": "Partial solar eclipse", "when": "2027-08-02", "note": "Seen from the UK · use eclipse glasses or projection, never look directly" }
+]

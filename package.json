@@ -1,0 +1,14 @@
+{
+  "name": "cosmos-notebook",
+  "version": "2.0.0",
+  "private": true,
+  "description": "A community lab notebook for learning astrophysics and quantum physics at home. Static site + serverless API on AWS (S3, CloudFront, Cognito, Lambda, DynamoDB). Zero npm dependencies.",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js --drafts && node scripts/dev-server.js",
+    "test": "node --test api/test/*.test.js test/*.test.js",
+    "new": "node scripts/new.js"
+  }
+}
