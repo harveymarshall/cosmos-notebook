@@ -52,6 +52,12 @@ jobs:
       - name: Package API
         run: cd api && zip -qr ../lambda.zip index.mjs package.json src -x 'src/fake-dynamo.js'
 
+      - name: Show GitHub identity (diagnostic)
+        run: |
+          t=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | python3 -c 'import sys,json;print(json.load(sys.stdin)["value"])')
+          p=$(echo "$t" | cut -d. -f2 | tr '_-' '/+'); while [ $(( ${#p} % 4 )) -ne 0 ]; do p="$p="; done
+          echo "$p" | base64 -d | python3 -c 'import sys,json;c=json.load(sys.stdin);print("::notice::sub="+c["sub"]+" aud="+str(c["aud"])+" iss="+c["iss"])'
+
       - name: Sign in to AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
