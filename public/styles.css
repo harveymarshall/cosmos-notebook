@@ -10,7 +10,7 @@
   --rule: #CFCDC4;
   --texture: linear-gradient(rgba(17,17,17,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(17,17,17,.045) 1px, transparent 1px);
   --texture-size: 16px 16px;
-  --display: 'Pixelify Sans', ui-monospace, monospace;
+  --display: 'Jersey 10', ui-monospace, monospace;
   --text: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   --lcd: 'VT323', ui-monospace, monospace;
   color-scheme: light;
@@ -521,3 +521,14 @@ legend { font-size: .82rem; text-transform: uppercase; letter-spacing: .05em; ma
 .live-graphs { display: grid; gap: 16px; }
 .prose .graph { font-size: 1rem; line-height: 1.4; }
 .data-table td:first-child { font-family: var(--lcd); font-size: 1.05rem; }
+
+/* Jersey 10 is a narrow, single-weight pixel face: size it by its capitals and never fake bold */
+h1, h2, h3, .eyebrow, .section-title, .btn, .nav a, .brand, .pill, .chip, .seg span, legend, .form label, th, .md-label,
+.px, .ftab .t, .fhead, .win-bar, .toast, .card h3, .list strong, .fentry strong, .comment-head strong, .check strong,
+.graph-controls label, .readouts .k, .stats > div > span, .road strong, .facts dt, .md-tabs button, .comments-link, .review summary, .loading, .how h3 {
+  font-size-adjust: cap-height 0.78;
+  font-weight: 400 !important;
+  letter-spacing: .04em;
+}
+h1, h2, h3, .hero h1 { letter-spacing: .03em; }
+.autograph .ca, .autograph .cl { font-size: 15px; font-weight: 400; }
