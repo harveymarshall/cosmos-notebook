@@ -52,6 +52,9 @@ AWS console → **Billing → Budgets → Create budget → Zero spend budget**,
 Create a free [GitHub](https://github.com) account and a new repository, and upload this folder, including the hidden `.github` folder.
 
 ### Step C — Create everything with one template
+
+> **Infrastructure is moving to Terraform.** The site's AWS setup now lives in `infra/terraform` and is applied by GitHub Actions — see [infra/README.md](infra/README.md). The CloudFormation steps below describe how the site was first created and will be removed once the migration is finished.
+
 1. AWS console, region **Europe (London) eu-west-2** (top right).
 2. **CloudFormation → Create stack → With new resources → Upload a template file** → choose `infra/cloudformation.yaml`.
 3. Stack name `cosmos-notebook`. For **GitHubRepo** enter `your-github-name/your-repo`. Leave the rest.
