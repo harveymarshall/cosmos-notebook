@@ -1,0 +1,28 @@
+# Keeps dependencies and the GitHub Actions used for deploys up to date (#53).
+# Weekly on Monday morning; minor and patch updates are grouped into one PR per ecosystem.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories: ['/', '/api']
+    schedule: { interval: weekly, day: monday, time: '07:00', timezone: Europe/London }
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule: { interval: weekly, day: monday, time: '07:00', timezone: Europe/London }
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
+
+  # Terraform providers (infra/terraform, added by the Terraform migration #34)
+  - package-ecosystem: terraform
+    directory: '/infra/terraform'
+    schedule: { interval: weekly, day: monday, time: '07:00', timezone: Europe/London }
+    open-pull-requests-limit: 5
+    groups:
+      terraform-minor-and-patch:
+        update-types: [minor, patch]
