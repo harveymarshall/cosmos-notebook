@@ -13,6 +13,7 @@ import { join, dirname, basename, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { markdown, escapeHtml } from './src/markdown.js';
 import { parseFrontMatter } from './src/frontmatter.js';
+import { parsePath, resolvePath, pathIndex } from './src/paths.js';
 import { trackTag, kindTag, stars } from './src/labels.js';
 import { icon, TRACK_ICON } from './src/icons.js';
 
@@ -60,28 +61,58 @@ async function loadCollection(dir) {
   return items;
 }
 
-const phaseOf = (id) => site.phases.find((p) => p.id === id);
+// Learning paths (content/paths). The Road Map path is also "the plan": its stages are the
+// phases shown on library cards, the home page and My notebook.
+async function loadPaths() {
+  const folder = join(ROOT, 'content/paths');
+  const files = (await readdir(folder).catch(() => [])).filter((f) => f.endsWith('.md') && !f.startsWith('_'));
+  const out = [];
+  for (const file of files) {
+    const p = parsePath(await readFile(join(folder, file), 'utf8'), { slug: basename(file, '.md'), file });
+    if (p.meta.draft && !SHOW_DRAFTS) continue;
+    out.push(p);
+  }
+  return out.sort((a, b) => a.meta.order - b.meta.order || a.meta.title.localeCompare(b.meta.title));
+}
+const parsedPaths = await loadPaths();
+const roadMap = parsedPaths.find((p) => p.meta.id === 'road-map');
+if (!roadMap) throw new Error('content/paths/road-map.md is missing — it defines the plan phases.');
+const phases = roadMap.stages.map((s) => ({ id: s.id, title: s.title, when: s.when, weeks: s.weeks, summary: s.intro }));
+const roadPhase = new Map();
+const roadOrder = new Map();
+roadMap.stages.forEach((s) => s.steps.forEach((st) => st.ref && !roadPhase.has(st.ref) && (roadPhase.set(st.ref, s.id), roadOrder.set(st.ref, roadOrder.size))));
+
+const phaseOf = (id) => phases.find((p) => p.id === id);
 const phaseIndex = (id) => {
-  const i = site.phases.findIndex((p) => p.id === id);
+  const i = phases.findIndex((p) => p.id === id);
   return i === -1 ? 99 : i;
 };
 const byPlan = (a, b) =>
-  phaseIndex(a.phase) - phaseIndex(b.phase) || (Number(a.order) || 0) - (Number(b.order) || 0) || a.title.localeCompare(b.title);
+  phaseIndex(a.phase) - phaseIndex(b.phase) || (roadOrder.get(a.slug) ?? 999) - (roadOrder.get(b.slug) ?? 999) || a.title.localeCompare(b.title);
+const withPhase = (items) => items.map((i) => ({ ...i, phase: roadPhase.get(i.slug) || '' }));
 
-const experiments = (await loadCollection('experiments')).sort(byPlan);
-const books = (await loadCollection('reading')).sort(byPlan);
+const experiments = withPhase(await loadCollection('experiments')).sort(byPlan);
+const books = withPhase(await loadCollection('reading')).sort(byPlan);
 const resources = JSON.parse(await readFile(join(ROOT, 'content/resources.json'), 'utf8').catch(() => '[]'));
 
 const ids = [...experiments.map((e) => e.slug), ...books.map((b) => b.slug)];
 const dupe = ids.find((id, i) => ids.indexOf(id) !== i);
 if (dupe) throw new Error(`Two library items share the id "${dupe}" — rename one file.`);
 
+const libraryMaps = {
+  experiment: new Map(experiments.map((e) => [e.slug, { title: e.title, url: `/experiments/${e.slug}/` }])),
+  book: new Map(books.map((b) => [b.slug, { title: b.title, url: `/reading/${b.slug}/` }])),
+  resource: new Map(resources.map((r) => [r.id, { title: r.title, url: r.link }])),
+};
+const paths = parsedPaths.map((p) => resolvePath(p, libraryMaps, { file: `${p.meta.id}.md` }));
+const partOf = pathIndex(paths);
+
 // ---------- layout ----------
 
 const NAV = [
   ['/', 'Home'],
   ['/library/', 'Library'],
-  ['/plan/', 'Plan'],
+  ['/paths/', 'Paths'],
   ['/tonight/', 'Tonight'],
   ['/community/', 'Community'],
   ['/about/', 'About'],
@@ -206,6 +237,14 @@ const progressWidget = (id, kind, title) =>
   <p class="muted small">Track this ${kind === 'book' ? 'book' : 'experiment'} in your own notebook — <a href="/login/?mode=signup">sign up free</a>.</p>
 </aside>`;
 
+const partOfLinks = (id) => {
+  const list = partOf.get(id);
+  if (!list?.length) return '';
+  return `<p class="part-of small"><span class="eyebrow">Part of</span> ${list
+    .map((x) => `<a href="/paths/${x.id}/">${esc(x.title)}</a> <span class="muted">(${esc(x.stage)})</span>`)
+    .join(' · ')}</p>`;
+};
+
 function toc(headings) {
   if (headings.filter((h) => h.level === 2).length < 3) return '';
   return `<nav class="toc" aria-label="On this page"><p class="eyebrow">On this page</p><ol>${headings
@@ -240,7 +279,7 @@ await write('config.js', `window.COSMOS_CONFIG = ${JSON.stringify(config, null, 
 await write(
   'library.json',
   JSON.stringify({
-    phases: site.phases.map(({ id, title, when }) => ({ id, title, when })),
+    phases: phases.map(({ id, title, when }) => ({ id, title, when })),
     items: [
       ...experiments.map((e) => ({
         id: e.slug,
@@ -289,6 +328,7 @@ for (const [i, e] of experiments.entries()) {
   <p class="lede">${esc(e.summary || '')}</p>
   <div class="card-meta">${trackTag(e.track)}</div>
   <dl class="facts">${facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>
+  ${partOfLinks(e.slug)}
   ${progressWidget(e.slug, 'experiment', e.title)}
 </header>
 <div class="entry-grid">
@@ -314,6 +354,7 @@ for (const b of books) {
   <p class="lede">${esc(b.author || '')}${b.summary ? ` — ${esc(b.summary)}` : ''}</p>
   <div class="card-meta">${trackTag(b.track)}</div>
   ${b.link ? `<p><a href="${esc(b.link)}" rel="noopener" target="_blank">More about this book</a></p>` : ''}
+  ${partOfLinks(b.slug)}
   ${progressWidget(b.slug, 'book', b.title)}
 </header>
 <div class="prose">${b.html}</div>
@@ -353,28 +394,28 @@ await write(
   })
 );
 
-// Plan
-const planBody = `<header class="page-head"><h1>The plan</h1><p class="lede">A suggested path: about 2–4 hours a week over a winter. Each phase pairs reading with a hands-on project — read just enough, then go and do it. Your own progress shows up in <a href="/notebook/">My notebook</a>.</p></header>
-<ol class="timeline">
-${site.phases
-  .map((p) => {
-    const exps = experiments.filter((e) => e.phase === p.id);
-    const bks = books.filter((b) => b.phase === p.id);
-    return `<li class="phase" data-phase="${esc(p.id)}">
-  <span class="phase-moon">${icon('moonNew', { scale: 2 })}</span>
-  <div class="phase-when"><span>${esc(p.when)}</span><span class="muted small">${esc(p.weeks || '')}</span></div>
-  <div class="phase-body">
-    <h2>${esc(p.title)}</h2>
-    <p>${esc(p.summary)}</p>
-    ${bks.length ? `<p class="eyebrow">Read</p><ul class="mini">${bks.map((b) => `<li data-item-id="${b.slug}"><a href="/reading/${b.slug}/">${esc(b.title)}</a></li>`).join('')}</ul>` : ''}
-    ${exps.length ? `<p class="eyebrow">Do</p><ul class="mini">${exps.map((e) => `<li data-item-id="${e.slug}"><a href="/experiments/${e.slug}/">${esc(e.title)}</a></li>`).join('')}</ul>` : ''}
-    ${p.extras?.length ? `<p class="eyebrow">Also</p><ul class="mini plain">${p.extras.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-  </div>
-</li>`;
-  })
-  .join('\n')}
-</ol>
-<section class="method win"><div class="win-bar"><span>Method</span><span class="fill dither" aria-hidden="true"></span></div><div class="win-body">
+// Learning paths
+const STEP_LABEL = { book: 'Read', experiment: 'Do', resource: 'Use', task: 'Also' };
+const LEVEL_LABEL = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' };
+const pathMeta = (p) =>
+  `${trackTag(p.meta.track)}<span class="tag">${esc(LEVEL_LABEL[p.meta.level] || p.meta.level)}</span>${
+    p.meta.length ? `<span class="muted small">${esc(p.meta.length)}</span>` : ''
+  }<span class="muted small">${p.counts.stages} stages · ${p.counts.steps} steps${p.counts.optional ? ` + ${p.counts.optional} optional` : ''}</span>`;
+const md = (text) => (text ? markdown(text).html : '');
+
+function stepItem(st) {
+  const label = `<span class="step-kind">${STEP_LABEL[st.kind]}</span>`;
+  const opt = st.optional ? ' <span class="tag ghost">Optional</span>' : '';
+  const note = st.note ? ` <span class="muted small">— ${esc(st.note)}</span>` : '';
+  if (st.kind === 'task') return `<li class="step task">${label}<span>${esc(st.title)}${opt}</span></li>`;
+  const link = st.external
+    ? `<a href="${esc(st.url)}" rel="noopener" target="_blank">${esc(st.title)}</a>`
+    : `<a href="${st.url}">${esc(st.title)}</a>`;
+  const tracked = st.kind === 'book' || st.kind === 'experiment';
+  return `<li class="step"${tracked ? ` data-item-id="${esc(st.ref)}"` : ''}${st.optional ? ' data-optional="true"' : ''}>${label}<span>${link}${note}${opt}</span></li>`;
+}
+
+const METHOD = `<section class="method win"><div class="win-bar"><span>Method</span><span class="fill dither" aria-hidden="true"></span></div><div class="win-body">
   <h2 class="section-title">How every project runs</h2>
   <ol class="steps">
     <li><strong>Learn just enough.</strong> One short video or chapter on the idea.</li>
@@ -384,7 +425,77 @@ ${site.phases
     <li><strong>Follow the questions.</strong> They become the next project.</li>
   </ol>
 </div></section>`;
-await write('plan/index.html', layout({ title: 'The plan', path: '/plan/', body: planBody, script: 'plan' }));
+
+for (const p of paths) {
+  const body = `<header class="page-head">
+  <p class="eyebrow"><a href="/paths/">Learning paths</a> · Path</p>
+  <h1>${esc(p.meta.title)}</h1>
+  <p class="lede">${esc(p.meta.summary)}</p>
+  <div class="card-meta path-meta">${pathMeta(p)}</div>
+  <p class="path-progress" id="path-progress" hidden></p>
+</header>
+${p.intro ? `<div class="prose path-intro">${md(p.intro)}</div>` : ''}
+<ol class="timeline path" data-path="${esc(p.meta.id)}">
+${p.stages
+  .map(
+    (s) => `<li class="phase" data-phase="${esc(s.id)}">
+  <span class="phase-moon">${icon('moonNew', { scale: 2, label: 'Stage not started' })}</span>
+  <div class="phase-when"><span>${esc(s.when)}</span><span class="muted small">${esc(s.weeks)}</span></div>
+  <div class="phase-body">
+    <h2>${esc(s.title)}</h2>
+    ${s.intro ? `<div class="stage-intro">${md(s.intro)}</div>` : ''}
+    <ol class="path-steps">${s.steps.map(stepItem).join('')}</ol>
+    ${s.checkpoint ? `<p class="checkpoint"><span class="eyebrow">Checkpoint</span> ${esc(s.checkpoint)}</p>` : ''}
+  </div>
+</li>`
+  )
+  .join('\n')}
+</ol>
+${METHOD}`;
+  await write(
+    `paths/${p.meta.id}/index.html`,
+    layout({ title: p.meta.title, description: p.meta.summary, path: `/paths/${p.meta.id}/`, body, script: 'path' })
+  );
+}
+
+await write(
+  'paths/index.html',
+  layout({
+    title: 'Learning paths',
+    path: '/paths/',
+    wide: true,
+    script: 'paths',
+    body: `<header class="page-head"><h1>Learning paths</h1>
+<p class="lede">Guided routes through the library. Each path pairs reading with hands-on projects, one stage at a time. Jump in anywhere — your progress follows you from <a href="/notebook/">My notebook</a>.</p></header>
+<div class="grid paths-grid">${paths
+      .map(
+        (p, i) => `<article class="card path-card" data-path="${esc(p.meta.id)}">
+  <div class="card-meta">${i === 0 ? '<span class="tag inv">Start here</span>' : ''}</div>
+  <div class="card-icon">${icon(TRACK_ICON[p.meta.track] || 'star', { scale: 3 })}</div>
+  <h3><a href="/paths/${p.meta.id}/">${esc(p.meta.title)}</a></h3>
+  <p>${esc(p.meta.summary)}</p>
+  <div class="card-foot path-meta">${pathMeta(p)}</div>
+  <p class="path-progress small" hidden></p>
+</article>`
+      )
+      .join('')}</div>`,
+  })
+);
+
+// What the browser needs to show progress on paths
+await write(
+  'paths.json',
+  JSON.stringify(
+    paths.map((p) => ({
+      id: p.meta.id,
+      title: p.meta.title,
+      stages: p.stages.map((s) => ({ id: s.id, title: s.title, items: s.steps.filter((st) => st.ref && (st.kind === 'book' || st.kind === 'experiment') && !st.optional).map((st) => st.ref) })),
+    }))
+  )
+);
+
+// The old plan page now lives on as the Road Map path
+await write('plan/index.html', redirect('/paths/road-map/'));
 
 // About
 const aboutSrc = await readFile(join(ROOT, 'content/about.md'), 'utf8').catch(() => '');
@@ -433,8 +544,8 @@ const homeBody = `<section class="hero">
 </section>
 
 <section>
-  <div class="section-row"><h2 class="section-title">The road map</h2><a href="/plan/">Full plan →</a></div>
-  <ol class="road">${site.phases
+  <div class="section-row"><h2 class="section-title">The road map</h2><a href="/paths/road-map/">Full road map →</a></div>
+  <ol class="road">${phases
     .map(
       (p) =>
         `<li data-phase="${esc(p.id)}">${icon('moonNew', { scale: 2 })}<span class="when">${esc(p.when.toUpperCase())}</span><strong>${esc(p.title)}</strong><span class="muted small">${
@@ -488,7 +599,7 @@ await write(
 
 // Sitemap
 const abs = (p) => `${siteUrl}${p}`;
-const urls = ['/', '/library/', '/plan/', '/tonight/', '/community/', '/about/', ...experiments.map((e) => `/experiments/${e.slug}/`), ...books.map((b) => `/reading/${b.slug}/`)];
+const urls = ['/', '/library/', '/paths/', ...paths.map((p) => `/paths/${p.meta.id}/`), '/tonight/', '/community/', '/about/', ...experiments.map((e) => `/experiments/${e.slug}/`), ...books.map((b) => `/reading/${b.slug}/`)];
 await write(
   'sitemap.xml',
   `<?xml version="1.0" encoding="UTF-8"?>

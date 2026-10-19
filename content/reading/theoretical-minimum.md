@@ -3,8 +3,6 @@ title: The Theoretical Minimum
 author: Leonard Susskind and George Hrabovsky
 summary: The real physics, with only the maths you need — a book plus a free lecture series. The stretch goal.
 track: both
-phase: level-up
-order: 1
 ---
 
 ## Why it's on the list

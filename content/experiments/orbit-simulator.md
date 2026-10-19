@@ -3,8 +3,6 @@ title: Simulate an orbit in code
 summary: Start with PhET's ready-made simulations, then write a 30-line Python program that makes a planet orbit the Sun.
 icon: planet
 track: astro
-phase: level-up
-order: 2
 difficulty: 2
 time: 2–3 evenings
 cost: "£0"

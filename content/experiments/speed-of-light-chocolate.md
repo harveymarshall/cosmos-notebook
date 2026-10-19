@@ -3,8 +3,6 @@ title: Measure the speed of light with chocolate
 summary: Use a microwave oven, a bar of chocolate and a ruler to measure one of the fastest things in the universe.
 icon: wave
 track: quantum
-phase: light
-order: 1
 difficulty: 1
 time: 30 minutes
 cost: "~£2 (one chocolate bar)"

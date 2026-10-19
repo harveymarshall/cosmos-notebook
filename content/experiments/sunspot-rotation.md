@@ -3,8 +3,6 @@ title: Track sunspots to time the Sun's spin
 summary: Project the Sun safely onto card, sketch its spots over a couple of weeks, and work out how fast our star rotates.
 icon: sun
 track: astro
-phase: space
-order: 2
 difficulty: 2
 time: 10 minutes on each clear day, over ~2 weeks
 cost: "£0 with binoculars you own"

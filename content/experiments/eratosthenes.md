@@ -3,8 +3,6 @@ title: Measure the Earth like Eratosthenes
 summary: A stick, its noon shadow and a little geometry — the same method used to measure the planet over 2,000 years ago.
 icon: sun
 track: astro
-phase: level-up
-order: 1
 difficulty: 1
 time: 1 sunny day near the equinox
 cost: "£0"

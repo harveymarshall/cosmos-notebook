@@ -3,7 +3,7 @@ title: "{{title}}"
 author: Author Name
 summary: One line on what the book is about.
 track: both             # astro | quantum | both
-phase: level-up         # which phase of the plan it belongs to
+# Add it to a learning path in content/paths to place it in the plan
 link:
 ---
 

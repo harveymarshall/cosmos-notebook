@@ -3,8 +3,6 @@ title: "Quantum: A Guide for the Perplexed"
 author: Jim Al-Khalili
 summary: A clear, friendly guide to what quantum mechanics says — and why it's so strange.
 track: quantum
-phase: light
-order: 1
 ---
 
 ## Why it's on the list
