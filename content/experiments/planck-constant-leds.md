@@ -3,8 +3,6 @@ title: Find Planck's constant with LEDs
 summary: Different coloured LEDs switch on at different voltages. A multimeter and a little maths reveal the number at the heart of quantum physics.
 icon: atom
 track: quantum
-phase: constant
-order: 1
 difficulty: 2
 time: 2 evenings
 cost: "~£15 (multimeter + LED kit)"

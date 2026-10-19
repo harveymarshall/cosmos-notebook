@@ -117,7 +117,8 @@ Leave **GitHubRepo** blank, install the [AWS CLI](https://aws.amazon.com/cli/), 
 
 | To change | Edit |
 | --- | --- |
-| Site name, tagline, the plan's phases | `content/site.json` |
+| Site name and tagline | `content/site.json` |
+| Learning paths (and the plan's phases, which come from `road-map.md`) | `content/paths/*.md` — the format is described at the top of `src/paths.js` |
 | The starter experiments and books | `content/experiments/*.md`, `content/reading/*.md` (`node scripts/new.js experiment "Title"` starts one) |
 | Tools and resources list | `content/resources.json` |
 | About page | `content/about.md` |

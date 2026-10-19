@@ -531,3 +531,24 @@ h1, h2, h3, .eyebrow, .section-title, .btn, .nav a, .brand, .pill, .chip, .seg s
 }
 h1, h2, h3, .hero h1 { letter-spacing: .03em; }
 .autograph .ca, .autograph .cl { font-size: 15px; font-weight: 400; }
+
+/* ---------- Learning paths ---------- */
+.tag.ghost { border-style: dashed; color: var(--ink2); }
+.path-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.path-intro { margin: 0 0 28px; max-width: 70ch; }
+.path-progress { margin: 14px 0 0; padding: 8px 12px; border: 2px solid var(--ink); background: var(--panel); display: inline-block; }
+.path-card .path-progress { display: block; margin-top: 10px; }
+.path-card .path-progress[hidden], .path-progress[hidden] { display: none; }
+.paths-grid .card-meta:empty { display: none; }
+.stage-intro { color: var(--ink2); margin: 0 0 12px; }
+.stage-intro p { margin: 0 0 8px; }
+.path-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.path-steps .step { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.path-steps .step-kind { font-family: var(--lcd); font-size: 1.05rem; text-transform: uppercase; color: var(--ink2); line-height: 1; }
+.path-steps .step.task span:last-child { color: var(--ink2); }
+.path-steps .pill { margin-left: 6px; }
+.checkpoint { margin: 16px 0 0; padding: 10px 12px; border: 2px dashed var(--ink); font-size: .92rem; }
+.checkpoint .eyebrow { display: block; margin: 0 0 4px; }
+.timeline.path .phase.current .phase-body h2::after { content: ' ← next'; font-family: var(--lcd); font-size: 1.05rem; text-transform: none; color: var(--ink2); }
+.part-of { margin: 10px 0 0; }
+.part-of .eyebrow { margin-right: 6px; }

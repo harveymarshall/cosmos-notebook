@@ -3,8 +3,6 @@ title: Weigh Jupiter
 summary: Track Jupiter's moons through binoculars over a few weeks, then use Kepler's third law to work out the mass of the largest planet.
 icon: jupiter
 track: astro
-phase: space
-order: 1
 difficulty: 3
 time: Several clear nights over 2–4 weeks
 cost: "£0 with binoculars you own"

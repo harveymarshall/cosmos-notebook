@@ -3,8 +3,6 @@ title: Build a CD spectroscope
 summary: Split light into its colours with a cardboard tube and an old CD, and discover how astronomers know what stars are made of.
 icon: spectrum
 track: both
-phase: orient
-order: 1
 difficulty: 1
 time: 1 evening
 cost: "~£0"

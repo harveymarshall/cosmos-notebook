@@ -3,7 +3,7 @@ title: "{{title}}"
 summary: One sentence on what this experiment measures or shows.
 icon: star             # planet | atom | telescope | star | sun | wave | spectrum | jupiter
 track: astro            # astro | quantum | both
-phase: level-up         # orient | light | constant | space | level-up
+# Add it to a learning path in content/paths to place it in the plan
 difficulty: 1           # 1 (easy) to 3 (fiddly)
 time: 1 evening
 cost: "~£5"

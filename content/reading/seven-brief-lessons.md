@@ -3,8 +3,6 @@ title: Seven Brief Lessons on Physics
 author: Carlo Rovelli
 summary: A very short, beautifully written tour of relativity, quantum mechanics, black holes and time.
 track: both
-phase: orient
-order: 1
 ---
 
 ## Why it's on the list

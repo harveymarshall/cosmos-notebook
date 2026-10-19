@@ -3,8 +3,6 @@ title: The double-slit experiment at home
 summary: See light behave like a wave using a laser pointer, a hair and some kitchen foil — the gateway to quantum weirdness.
 icon: wave
 track: quantum
-phase: light
-order: 2
 difficulty: 2
 time: 1–2 evenings
 cost: "~£5 (laser pointer)"
