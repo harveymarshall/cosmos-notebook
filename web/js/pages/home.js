@@ -3,11 +3,13 @@ import { get } from '../api.js';
 import { getSession } from '../auth.js';
 import { postCard, likedSet, wireLikes } from '../feed.js';
 import { fillPhaseMoons } from '../progress-moons.js';
+import { renderNextSteps } from '../next-steps.js';
 
 fillPhaseMoons().catch(() => {});
 
 // Logged-in members get a shortcut to their notebook instead of the sign-up button
 if (getSession()) {
+  renderNextSteps(document.getElementById('home-next')).catch(() => {});
   const actions = document.getElementById('hero-actions');
   if (actions) actions.innerHTML = `<a class="btn primary" href="/notebook/">Open my notebook</a><a class="btn" href="/tonight/">Tonight's sky</a>`;
 }

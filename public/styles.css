@@ -552,3 +552,22 @@ h1, h2, h3, .hero h1 { letter-spacing: .03em; }
 .timeline.path .phase.current .phase-body h2::after { content: ' ← next'; font-family: var(--lcd); font-size: 1.05rem; text-transform: none; color: var(--ink2); }
 .part-of { margin: 10px 0 0; }
 .part-of .eyebrow { margin-right: 6px; }
+.linkish { background: none; border: 0; padding: 4px 2px; min-height: 32px; font: inherit; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.linkish.small { font-size: .8rem; color: var(--ink2); }
+.linkish:hover { color: var(--ink); }
+.path-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 16px 0 0; }
+.step-extra { white-space: normal; }
+.skip-form { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+.skip-form input { min-height: 38px; min-width: 0; width: min(260px, 100%); }
+/* Next step card (My notebook, home) */
+.next-steps { margin: 0 0 24px; }
+.next-steps .win-body { display: grid; gap: 14px; }
+.ns-row + .ns-row { border-top: 2px dashed var(--ink); padding-top: 14px; }
+.ns-path { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.ns-path a { font-family: var(--display); text-transform: uppercase; text-decoration: none; }
+.ns-path .lcd { font-size: 1.3rem; color: var(--ink2); }
+.ns-step { margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.ns-step .step-kind { font-family: var(--lcd); font-size: 1.05rem; text-transform: uppercase; color: var(--ink2); }
+.next-nudge { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; }
+.next-nudge p { margin: 4px 0 0; }
+.home-next { margin: 0 0 8px; }

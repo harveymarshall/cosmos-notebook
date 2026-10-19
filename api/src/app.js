@@ -184,6 +184,64 @@ export function createApp({ store, now = () => new Date().toISOString(), makeId 
     return { deleted: true };
   });
 
+  // ---------- learning paths ----------
+  // Paths themselves are static files (paths.json); this only stores a member's own choices.
+  // Step completion is never stored here: it comes from their progress on library items.
+  const PACES = ['relaxed', 'steady'];
+  const MAX_ENROLMENTS = 20;
+  const MAX_SKIPS = 200;
+  const pathIdOf = (params) => param(params.pathId, ITEM_ID, 'pathId');
+
+  route('GET', '/api/me/paths', { auth: true }, async ({ user }) => ({ enrolments: await store.listEnrolments(user.sub) }));
+
+  // Join a path, or change its pace
+  route('PUT', '/api/me/paths/:pathId', { auth: true }, async ({ user, params, body }) => {
+    const pathId = pathIdOf(params);
+    const existing = await store.getEnrolment(user.sub, pathId);
+    if (!existing && (await store.listEnrolments(user.sub)).length >= MAX_ENROLMENTS) {
+      throw new HttpError(409, `You can follow up to ${MAX_ENROLMENTS} paths at once — leave one first`);
+    }
+    const enrolment = {
+      pathId,
+      pace: oneOf(body, 'pace', PACES, { fallback: existing?.pace || 'steady' }),
+      skipped: existing?.skipped || {},
+      enrolledAt: existing?.enrolledAt || now(),
+      updatedAt: now(),
+    };
+    await store.putEnrolment(user.sub, enrolment);
+    return { enrolment };
+  });
+
+  route('DELETE', '/api/me/paths/:pathId', { auth: true }, async ({ user, params }) => {
+    await store.deleteEnrolment(user.sub, pathIdOf(params));
+    return { deleted: true };
+  });
+
+  // "I already know this": skip a step on a path you follow, with an optional note
+  route('PUT', '/api/me/paths/:pathId/skips/:itemId', { auth: true }, async ({ user, params, body }) => {
+    const pathId = pathIdOf(params);
+    const itemId = param(params.itemId, ITEM_ID, 'itemId');
+    const enrolment = await store.getEnrolment(user.sub, pathId);
+    if (!enrolment) throw new HttpError(404, 'Join this path first');
+    const skipped = { ...(enrolment.skipped || {}) };
+    if (!skipped[itemId] && Object.keys(skipped).length >= MAX_SKIPS) throw new HttpError(409, 'Too many skipped steps');
+    skipped[itemId] = { note: str(body, 'note', { max: LIMITS.summary }), at: now() };
+    const updated = { ...enrolment, skipped, updatedAt: now() };
+    await store.putEnrolment(user.sub, updated);
+    return { enrolment: updated };
+  });
+
+  route('DELETE', '/api/me/paths/:pathId/skips/:itemId', { auth: true }, async ({ user, params }) => {
+    const pathId = pathIdOf(params);
+    const itemId = param(params.itemId, ITEM_ID, 'itemId');
+    const enrolment = await store.getEnrolment(user.sub, pathId);
+    if (!enrolment) throw new HttpError(404, 'Join this path first');
+    const { [itemId]: _gone, ...skipped } = enrolment.skipped || {};
+    const updated = { ...enrolment, skipped, updatedAt: now() };
+    await store.putEnrolment(user.sub, updated);
+    return { enrolment: updated };
+  });
+
   // Journal: one entry per session, so a long experiment never becomes one giant page
   const MAX_ENTRIES = 200;
   const readEntry = (body) => ({

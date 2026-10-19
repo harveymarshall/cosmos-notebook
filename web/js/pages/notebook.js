@@ -1,5 +1,6 @@
 import { render, $, $$, esc, requireLogin, showError, pill, trackTag, params, busy, toast, icon, statusMoon, fmtDate } from '../ui.js';
 import { get, put, loadLibrary } from '../api.js';
+import { renderNextSteps } from '../next-steps.js';
 
 const session = requireLogin();
 const TABS = [
@@ -120,7 +121,7 @@ async function main() {
     <p class="eyebrow">My notebook</p>
     <h1>${profile?.displayName ? `Hello, ${esc(profile.displayName)}` : 'Welcome aboard'}</h1>
     <p class="muted small">${esc(session.email || '')} · <a href="/notebook/profile/">Profile &amp; settings</a>${
-      user.isAdmin ? ' · <a href="/admin/">Review queue</a>' : ''
+      user.isAdmin ? ' · <a href="/admin/">Admin</a>' : ''
     }</p>
   </div>
   <div class="head-actions">
@@ -128,8 +129,9 @@ async function main() {
     <a class="btn" href="/submit/">Suggest an addition</a>
   </div>
 </header>
-${params().get('welcome') ? `<div class="notice ok">Your account is ready. Open the <strong>Next</strong> tab and pick an experiment — <a href="/plan/">the plan</a> suggests an order.</div>` : ''}
+${params().get('welcome') ? `<div class="notice ok">Your account is ready. Pick a <a href="/paths/">learning path</a> — <a href="/paths/road-map/">The Road Map</a> is a good start — or open the <strong>Next</strong> tab and choose an experiment.</div>` : ''}
 ${profile?.displayName ? '' : profilePrompt()}
+<div id="next-steps" hidden></div>
 
 <div class="stats">
   <div><strong>${done}<span>/${experiments.length}</span></strong><span>Experiments</span></div>
@@ -149,6 +151,7 @@ ${profile?.displayName ? '' : profilePrompt()}
 </section>
 `);
   drawFolder();
+  renderNextSteps($('#next-steps'), { nudge: true }).catch(() => {});
 
   $$('.ftab').forEach((b) =>
     b.addEventListener('click', () => {
