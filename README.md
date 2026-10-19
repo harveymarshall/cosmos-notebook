@@ -127,6 +127,18 @@ Leave **GitHubRepo** blank, install the [AWS CLI](https://aws.amazon.com/cli/), 
 
 Members' approved suggestions live in the database, not in these files, so you can keep editing the starter library while the community grows it.
 
+### Getting found by search engines
+Every public page has a description, a link-preview card (`public/og-image.png`), structured data (experiments, books, learning paths, breadcrumbs) and is listed in `/sitemap.xml` with the date it last changed. Private pages (My notebook, log in, admin) are marked `noindex`.
+
+To get into Google and Bing:
+1. **Google Search Console** → Add property → **URL prefix** → your site URL → choose **HTML tag** and copy the `content="…"` code into `verification.google` in `content/site.json`. Push, wait for the deploy, then click **Verify**.
+2. In Search Console → **Sitemaps**, submit `sitemap.xml`.
+3. **Bing Webmaster Tools** → **Import from Google Search Console** (or use the HTML tag the same way, into `verification.bing`).
+
+If you move to a custom domain, do it before submitting (or add the new domain as a new property and keep the old address redirecting).
+
+The share image and icons are drawn by `python3 scripts/social-images.py` (needs Pillow); re-run it if the title, tagline or Saturn icon change.
+
 ### Let others run their own copy
 GitHub repo → **Settings → Template repository**. Anyone can then click **Use this template**, change `content/site.json`, and follow section 2 in their own AWS account.
 
