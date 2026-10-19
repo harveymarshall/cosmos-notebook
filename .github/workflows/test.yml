@@ -1,0 +1,32 @@
+name: Test
+
+# Runs the tests and a full site build on every pull request (including Dependabot's),
+# so nothing reaches main - and the live site - without passing them.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies (if any)
+        run: if [ -f package-lock.json ]; then npm ci; fi
+      - name: Run tests
+        run: npm test
+      - name: Build site
+        run: node build.js
+        env:
+          COGNITO_REGION: eu-west-2
+          COGNITO_CLIENT_ID: test-client
