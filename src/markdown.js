@@ -58,7 +58,7 @@ function inline(text) {
   return s.replace(/\u0000(\d+)\u0000/g, (_, i) => stash[Number(i)]);
 }
 
-function renderList(allItems, ordered) {
+function renderList(allItems, ordered, start = 1) {
   const items = allItems.filter((i) => i.trim());
   if (!items.length) return '<p class="placeholder">Notes to come.</p>';
   const tag = ordered ? 'ol' : 'ul';
@@ -75,7 +75,7 @@ function renderList(allItems, ordered) {
       return `<li>${inline(item)}</li>`;
     })
     .join('');
-  return `<${tag}${isTask ? ' class="tasks"' : ''}>${lis}</${tag}>`;
+  return `<${tag}${isTask ? ' class="tasks"' : ''}${ordered && start !== 1 ? ` start="${start}"` : ''}>${lis}</${tag}>`;
 }
 
 function renderTable(rows) {
@@ -192,6 +192,8 @@ export function markdown(src) {
     const li = line.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/);
     if (li) {
       const ordered = /\d/.test(li[1]);
+      // Keep numbering going when a list is split by a code block or equation ("3." stays 3)
+      const start = ordered ? parseInt(li[1], 10) || 1 : 1;
       const items = [];
       while (i < lines.length) {
         const m = lines[i].match(/^\s*([-*+]|\d+[.)])\s+(.*)$/);
@@ -203,7 +205,7 @@ export function markdown(src) {
           i++;
         } else break;
       }
-      out.push(renderList(items, ordered));
+      out.push(renderList(items, ordered, start));
       continue;
     }
 
