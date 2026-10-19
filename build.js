@@ -11,6 +11,7 @@
 import { readFile, writeFile, mkdir, readdir, rm, cp } from 'node:fs/promises';
 import { join, dirname, basename, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { markdown, escapeHtml } from './src/markdown.js';
 import { parseFrontMatter } from './src/frontmatter.js';
 import { parsePath, resolvePath, pathIndex } from './src/paths.js';
@@ -123,8 +124,8 @@ const MATH_HEAD = `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/kat
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
   onload="renderMathInElement(document.querySelector('main'),{delimiters:[{left:'$$',right:'$$',display:true},{left:'\\\\(',right:'\\\\)',display:false}]})"></script>`;
 
-function layout({ title, description, path, body, hasMath = false, wide = false, script, noindex = false }) {
-  const pageTitle = title ? `${title} · ${site.title}` : site.title;
+function layout({ title, description, path, body, hasMath = false, wide = false, script, noindex = false, ogType = 'website', jsonLd = [], crumbs = [] }) {
+  const pageTitle = title ? `${title} · ${site.title}` : site.homeTitle || site.title;
   const desc = description || site.description;
   const canonical = siteUrl ? `${siteUrl}${path}` : path;
   const nav = NAV.map(([href, label]) => {
@@ -140,10 +141,14 @@ function layout({ title, description, path, body, hasMath = false, wide = false,
 <title>${esc(pageTitle)}</title>
 <meta name="description" content="${esc(desc)}">
 ${noindex ? '<meta name="robots" content="noindex">' : `<link rel="canonical" href="${esc(canonical)}">`}
-<meta property="og:title" content="${esc(title || site.title)}">
-<meta property="og:description" content="${esc(desc)}">
-<meta property="og:type" content="website">
+${socialMeta({ title: title || site.homeTitle || site.title, desc, canonical, ogType })}
+${site.verification?.google ? `<meta name="google-site-verification" content="${esc(site.verification.google)}">` : ''}
+${site.verification?.bing ? `<meta name="msvalidate.01" content="${esc(site.verification.bing)}">` : ''}
+${noindex ? '' : structuredData(jsonLd, crumbs)}
+<meta name="theme-color" content="#F4F3EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0B0B0B" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jersey+10&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=VT323&display=swap">
@@ -185,6 +190,44 @@ ${body}
 `;
 }
 
+// ---------- search engines and link previews ----------
+const absUrl = (p) => (siteUrl ? `${siteUrl}${p}` : p);
+const OG_IMAGE = { path: '/og-image.png', width: 1200, height: 630, alt: 'Cosmos Notebook: learn astrophysics and quantum physics by doing' };
+const ORG = { '@type': 'Organization', name: site.title, url: absUrl('/'), logo: absUrl('/apple-touch-icon.png') };
+const LEVEL_NAME = { 1: 'Beginner', 2: 'Intermediate', 3: 'Advanced' };
+const TRACK_ABOUT = { astro: ['Astrophysics'], quantum: ['Quantum physics'], both: ['Astrophysics', 'Quantum physics'] };
+
+function socialMeta({ title, desc, canonical, ogType }) {
+  return [
+    `<meta property="og:site_name" content="${esc(site.title)}">`,
+    `<meta property="og:title" content="${esc(title)}">`,
+    `<meta property="og:description" content="${esc(desc)}">`,
+    `<meta property="og:type" content="${ogType}">`,
+    `<meta property="og:url" content="${esc(canonical)}">`,
+    `<meta property="og:locale" content="${(site.language || 'en-GB').replace('-', '_')}">`,
+    `<meta property="og:image" content="${esc(absUrl(OG_IMAGE.path))}">`,
+    `<meta property="og:image:width" content="${OG_IMAGE.width}">`,
+    `<meta property="og:image:height" content="${OG_IMAGE.height}">`,
+    `<meta property="og:image:alt" content="${esc(OG_IMAGE.alt)}">`,
+    '<meta name="twitter:card" content="summary_large_image">',
+  ].join('\n');
+}
+
+/** schema.org JSON-LD: the page's own items plus a breadcrumb trail. */
+function structuredData(items, crumbs) {
+  const graph = [...items];
+  if (crumbs.length) {
+    graph.push({
+      '@type': 'BreadcrumbList',
+      itemListElement: [['Home', '/'], ...crumbs].map(([name, p], i) => ({ '@type': 'ListItem', position: i + 1, name, item: absUrl(p) })),
+    });
+  }
+  if (!graph.length) return '';
+  // "<" is escaped so text can never close the script tag early
+  const json = JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }).replace(/</g, '\\u003c');
+  return `<script type="application/ld+json">${json}</script>`;
+}
+
 async function write(path, html) {
   const full = join(OUT, path);
   await mkdir(dirname(full), { recursive: true });
@@ -192,7 +235,9 @@ async function write(path, html) {
 }
 
 /** A page whose content is drawn by a script in web/js/pages. */
-const appPage = (path, { title, script, wide = false, intro = '' }) =>
+// App pages are filled in by JavaScript. Most are private (noindex); public ones that make
+// sense in search results (Tonight's sky, Community) pass index: true and a description.
+const appPage = (path, { title, script, wide = false, intro = '', index = false, description, jsonLd = [], crumbs = [] }) =>
   write(
     `${path.replace(/^\//, '')}index.html`,
     layout({
@@ -200,7 +245,10 @@ const appPage = (path, { title, script, wide = false, intro = '' }) =>
       path,
       script,
       wide,
-      noindex: true,
+      description,
+      jsonLd,
+      crumbs,
+      noindex: !index,
       body: `${intro}<div id="app" class="app" aria-live="polite"><p class="muted loading">Loading…</p></div>`,
     })
   );
@@ -341,7 +389,30 @@ for (const [i, e] of experiments.entries()) {
 </article>`;
   await write(
     `experiments/${e.slug}/index.html`,
-    layout({ title: e.title, description: e.summary, path: `/experiments/${e.slug}/`, body, hasMath: e.hasMath, script: 'progress-widget' })
+    layout({
+      title: e.title,
+      description: e.summary,
+      path: `/experiments/${e.slug}/`,
+      body,
+      hasMath: e.hasMath,
+      script: 'progress-widget',
+      ogType: 'article',
+      crumbs: [['Library', '/library/'], [e.title, `/experiments/${e.slug}/`]],
+      jsonLd: [
+        {
+          '@type': 'LearningResource',
+          name: e.title,
+          description: e.summary || '',
+          url: absUrl(`/experiments/${e.slug}/`),
+          learningResourceType: 'Experiment',
+          educationalLevel: LEVEL_NAME[e.difficulty] || 'Beginner',
+          about: TRACK_ABOUT[e.track] || TRACK_ABOUT.both,
+          isAccessibleForFree: true,
+          inLanguage: site.language || 'en-GB',
+          publisher: ORG,
+        },
+      ],
+    })
   );
 }
 
@@ -361,7 +432,33 @@ for (const b of books) {
 </article>`;
   await write(
     `reading/${b.slug}/index.html`,
-    layout({ title: b.title, description: b.summary, path: `/reading/${b.slug}/`, body, hasMath: b.hasMath, script: 'progress-widget' })
+    layout({
+      title: b.title,
+      description: b.summary,
+      path: `/reading/${b.slug}/`,
+      body,
+      hasMath: b.hasMath,
+      script: 'progress-widget',
+      crumbs: [['Library', '/library/#books'], [b.title, `/reading/${b.slug}/`]],
+      jsonLd: [
+        {
+          '@type': 'WebPage',
+          name: `${b.title} — reading notes`,
+          url: absUrl(`/reading/${b.slug}/`),
+          description: b.summary || '',
+          about: {
+            '@type': 'Book',
+            name: b.title,
+            author: String(b.author || '')
+              .split(/,\s*|\s+and\s+|\s*&\s*/)
+              .filter(Boolean)
+              .map((name) => ({ '@type': 'Person', name })),
+            ...(b.link ? { sameAs: b.link } : {}),
+          },
+          publisher: ORG,
+        },
+      ],
+    })
   );
 }
 
@@ -377,6 +474,19 @@ await write(
   layout({
     title: 'Library',
     path: '/library/',
+    description: `${experiments.length} hands-on physics experiments you can do at home, plus books and free tools for learning astrophysics and quantum physics.`,
+    crumbs: [['Library', '/library/']],
+    jsonLd: [
+      {
+        '@type': 'CollectionPage',
+        name: 'The library',
+        url: absUrl('/library/'),
+        mainEntity: {
+          '@type': 'ItemList',
+          itemListElement: experiments.map((e, i) => ({ '@type': 'ListItem', position: i + 1, url: absUrl(`/experiments/${e.slug}/`), name: e.title })),
+        },
+      },
+    ],
     wide: true,
     script: 'library',
     body: `<header class="page-head"><h1>The library</h1>
@@ -455,7 +565,28 @@ ${p.stages
 ${METHOD}`;
   await write(
     `paths/${p.meta.id}/index.html`,
-    layout({ title: p.meta.title, description: p.meta.summary, path: `/paths/${p.meta.id}/`, body, script: 'path' })
+    layout({
+      title: p.meta.title,
+      description: p.meta.summary,
+      path: `/paths/${p.meta.id}/`,
+      body,
+      script: 'path',
+      crumbs: [['Learning paths', '/paths/'], [p.meta.title, `/paths/${p.meta.id}/`]],
+      jsonLd: [
+        {
+          '@type': 'Course',
+          name: p.meta.title,
+          description: p.meta.summary,
+          url: absUrl(`/paths/${p.meta.id}/`),
+          provider: ORG,
+          educationalLevel: LEVEL_LABEL[p.meta.level] || p.meta.level,
+          about: TRACK_ABOUT[p.meta.track] || TRACK_ABOUT.both,
+          isAccessibleForFree: true,
+          inLanguage: site.language || 'en-GB',
+          syllabusSections: p.stages.map((s) => ({ '@type': 'Syllabus', name: s.title, description: s.intro || s.title })),
+        },
+      ],
+    })
   );
 }
 
@@ -464,6 +595,15 @@ await write(
   layout({
     title: 'Learning paths',
     path: '/paths/',
+    description: 'Guided routes through home physics experiments and books: from measuring the speed of light in your kitchen to weighing Jupiter with binoculars.',
+    crumbs: [['Learning paths', '/paths/']],
+    jsonLd: [
+      {
+        '@type': 'ItemList',
+        name: 'Learning paths',
+        itemListElement: paths.map((p, i) => ({ '@type': 'ListItem', position: i + 1, url: absUrl(`/paths/${p.meta.id}/`), name: p.meta.title })),
+      },
+    ],
     wide: true,
     script: 'paths',
     body: `<header class="page-head"><h1>Learning paths</h1>
@@ -512,7 +652,7 @@ const aboutSrc = await readFile(join(ROOT, 'content/about.md'), 'utf8').catch(()
 const about = markdown(parseFrontMatter(aboutSrc).body);
 await write(
   'about/index.html',
-  layout({ title: 'About', path: '/about/', body: `<article class="entry"><header class="entry-head"><h1>About</h1></header><div class="prose">${about.html}</div></article>` })
+  layout({ title: 'About', path: '/about/', crumbs: [['About', '/about/']], body: `<article class="entry"><header class="entry-head"><h1>About</h1></header><div class="prose">${about.html}</div></article>` })
 );
 
 // Home
@@ -576,7 +716,20 @@ const homeBody = `<section class="hero">
   <div class="section-row"><h2 class="section-title">From the community</h2><a href="/community/">See all →</a></div>
   <div id="home-feed" class="grid"><p class="muted">Loading the latest write-ups…</p></div>
 </section>`;
-await write('index.html', layout({ title: '', path: '/', body: homeBody, wide: true, script: 'home' }));
+await write(
+  'index.html',
+  layout({
+    title: '',
+    path: '/',
+    body: homeBody,
+    wide: true,
+    script: 'home',
+    jsonLd: [
+      { '@type': 'WebSite', name: site.title, url: absUrl('/'), description: site.description, inLanguage: site.language || 'en-GB', publisher: ORG },
+      ORG,
+    ],
+  })
+);
 
 // App pages
 await appPage('/login/', { title: 'Log in', script: 'login' });
@@ -587,6 +740,9 @@ await appPage('/notebook/profile/', { title: 'Profile', script: 'profile' });
 await appPage('/community/', {
   title: 'Community',
   script: 'community',
+  index: true,
+  description: 'Write-ups and observing logs shared by Cosmos Notebook members: home physics experiments, night-sky sessions and what they learned.',
+  crumbs: [['Community', '/community/']],
   intro: `<header class="page-head"><h1>Community</h1><p class="lede">Write-ups and observing logs shared by members. Be kind, be curious, and show your working.</p></header>`,
 });
 await appPage('/community/post/', { title: 'Write-up', script: 'post' });
@@ -596,7 +752,15 @@ await appPage('/submit/', {
   script: 'submit',
   intro: `<header class="page-head"><h1>Suggest an addition</h1><p class="lede">Know a great home experiment, book, video or tool? Suggest it here. An admin checks every suggestion before it joins the library.</p></header>`,
 });
-await appPage('/tonight/', { title: "Tonight's sky", script: 'tonight', wide: true });
+await appPage('/tonight/', {
+  title: "Tonight's sky",
+  script: 'tonight',
+  wide: true,
+  index: true,
+  description:
+    "What's in the sky tonight where you are: the Moon's phase, which planets are up and when, an hourly cloud forecast with a go / no-go verdict, and upcoming meteor showers and eclipses.",
+  crumbs: [["Tonight's sky", '/tonight/']],
+});
 
 // 404
 await write(
@@ -609,14 +773,32 @@ await write(
   })
 );
 
-// Sitemap
+// Sitemap, with each page's last-changed date taken from git history (when available)
 const abs = (p) => `${siteUrl}${p}`;
-const urls = ['/', '/library/', '/paths/', ...paths.map((p) => `/paths/${p.meta.id}/`), '/tonight/', '/community/', '/about/', ...experiments.map((e) => `/experiments/${e.slug}/`), ...books.map((b) => `/reading/${b.slug}/`)];
+function lastChanged(...files) {
+  try {
+    const out = execFileSync('git', ['log', '-1', '--format=%cs', '--', ...files], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(out) ? out : '';
+  } catch {
+    return '';
+  }
+}
+const sitemap = [
+  ['/', lastChanged('content', 'build.js')],
+  ['/library/', lastChanged('content/experiments', 'content/reading', 'content/resources.json')],
+  ['/paths/', lastChanged('content/paths')],
+  ...paths.map((p) => [`/paths/${p.meta.id}/`, lastChanged(`content/paths/${p.meta.id}.md`)]),
+  ['/tonight/', lastChanged('web/js/pages/tonight.js', 'src/astro.js', 'content/events.json')],
+  ['/community/', ''],
+  ['/about/', lastChanged('content/about.md')],
+  ...experiments.map((e) => [`/experiments/${e.slug}/`, lastChanged(`content/experiments/${e.file}`)]),
+  ...books.map((b) => [`/reading/${b.slug}/`, lastChanged(`content/reading/${b.file}`)]),
+];
 await write(
   'sitemap.xml',
   `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.map((u) => `  <url><loc>${abs(u)}</loc></url>`).join('\n')}
+${sitemap.map(([u, d]) => `  <url><loc>${abs(u)}</loc>${d ? `<lastmod>${d}</lastmod>` : ''}</url>`).join('\n')}
 </urlset>
 `
 );
