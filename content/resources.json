@@ -26,5 +26,26 @@
     "summary": "The Open University's free short courses, including introductions to astronomy and quantum physics.",
     "track": "both",
     "link": "https://www.open.edu/openlearn/"
+  },
+  {
+    "id": "openstax-astronomy",
+    "title": "OpenStax Astronomy 2e",
+    "summary": "A complete, free university astronomy textbook from Rice University — the place to look things up properly.",
+    "track": "astro",
+    "link": "https://openstax.org/details/books/astronomy-2e"
+  },
+  {
+    "id": "feynman-lectures",
+    "title": "The Feynman Lectures on Physics",
+    "summary": "Richard Feynman's legendary lectures, free to read online from Caltech.",
+    "track": "both",
+    "link": "https://www.feynmanlectures.caltech.edu"
+  },
+  {
+    "id": "anki",
+    "title": "Anki",
+    "summary": "Free flashcard app that uses spaced repetition, so what you read actually sticks.",
+    "track": "both",
+    "link": "https://apps.ankiweb.net"
   }
 ]
