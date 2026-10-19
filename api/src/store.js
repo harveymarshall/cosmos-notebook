@@ -6,6 +6,7 @@
 // Single-table layout (PK / SK, plus two indexes):
 //   USER#<sub>   PROFILE                profile
 //   USER#<sub>   PROG#<itemId>          progress on a library item
+//   USER#<sub>   PATH#<pathId>          enrolment on a learning path (pace, skipped steps, checkpoints)
 //   USER#<sub>   OBS#<id>               observing log entry
 //   POST#<id>    META                   published write-up   (GSI1: FEED / <publishedAt>#<id>)
 //   POST#<id>    LIKE#<sub>             a like
@@ -78,6 +79,20 @@ export function createStore({ send, table }) {
     },
     async deleteProgress(sub, itemId) {
       await del(`USER#${sub}`, `PROG#${itemId}`);
+    },
+
+    // ---------- learning paths ----------
+    async listEnrolments(sub) {
+      return (await userPrefix(sub, 'PATH#')).map(strip);
+    },
+    async getEnrolment(sub, pathId) {
+      return strip(await get(`USER#${sub}`, `PATH#${pathId}`));
+    },
+    async putEnrolment(sub, enrolment) {
+      await put({ PK: `USER#${sub}`, SK: `PATH#${enrolment.pathId}`, entity: 'enrolment', ...enrolment });
+    },
+    async deleteEnrolment(sub, pathId) {
+      await del(`USER#${sub}`, `PATH#${pathId}`);
     },
 
     // ---------- journal entries (one per session, filed under a library item) ----------

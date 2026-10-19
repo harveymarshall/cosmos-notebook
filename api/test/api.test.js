@@ -282,3 +282,42 @@ test('the admin console is only sent to admins', async () => {
   assert.equal(r.status, 200);
   assert.match(r.data.code, /Review queue/);
 });
+
+test('learning paths: join, change pace, skip steps, leave', async () => {
+  const { call } = setup();
+  assert.equal((await call('GET', '/api/me/paths')).status, 401);
+  assert.deepEqual((await call('GET', '/api/me/paths', { as: ALICE })).data, { enrolments: [] });
+
+  let r = await call('PUT', '/api/me/paths/road-map', { as: ALICE, body: {} });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.enrolment.pace, 'steady', 'steady by default');
+  const enrolledAt = r.data.enrolment.enrolledAt;
+
+  r = await call('PUT', '/api/me/paths/road-map', { as: ALICE, body: { pace: 'relaxed' } });
+  assert.equal(r.data.enrolment.pace, 'relaxed');
+  assert.equal(r.data.enrolment.enrolledAt, enrolledAt, 'changing pace keeps the join date');
+  assert.equal((await call('PUT', '/api/me/paths/road-map', { as: ALICE, body: { pace: 'sprint' } })).status, 400);
+  assert.equal((await call('PUT', '/api/me/paths/Bad%20Id', { as: ALICE, body: {} })).status, 400);
+
+  assert.equal((await call('PUT', '/api/me/paths/other/skips/cd-spectroscope', { as: ALICE, body: {} })).status, 404, 'must join first');
+  r = await call('PUT', '/api/me/paths/road-map/skips/cd-spectroscope', { as: ALICE, body: { note: 'Did it at school' } });
+  assert.equal(r.data.enrolment.skipped['cd-spectroscope'].note, 'Did it at school');
+  r = await call('PUT', '/api/me/paths/road-map', { as: ALICE, body: { pace: 'steady' } });
+  assert.ok(r.data.enrolment.skipped['cd-spectroscope'], 'changing pace keeps skips');
+  r = await call('DELETE', '/api/me/paths/road-map/skips/cd-spectroscope', { as: ALICE });
+  assert.deepEqual(r.data.enrolment.skipped, {});
+
+  // Private to each member
+  assert.deepEqual((await call('GET', '/api/me/paths', { as: BOB })).data.enrolments, []);
+  assert.equal((await call('GET', '/api/me/paths', { as: ALICE })).data.enrolments.length, 1);
+
+  assert.equal((await call('DELETE', '/api/me/paths/road-map', { as: ALICE })).status, 200);
+  assert.deepEqual((await call('GET', '/api/me/paths', { as: ALICE })).data.enrolments, []);
+});
+
+test('learning paths: a member can follow at most 20 at once', async () => {
+  const { call } = setup();
+  for (let i = 0; i < 20; i++) assert.equal((await call('PUT', `/api/me/paths/p${i}`, { as: ALICE, body: {} })).status, 200);
+  assert.equal((await call('PUT', '/api/me/paths/one-more', { as: ALICE, body: {} })).status, 409);
+  assert.equal((await call('PUT', '/api/me/paths/p3', { as: ALICE, body: { pace: 'relaxed' } })).status, 200, 'updating an existing one is fine');
+});

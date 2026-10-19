@@ -432,6 +432,7 @@ for (const p of paths) {
   <h1>${esc(p.meta.title)}</h1>
   <p class="lede">${esc(p.meta.summary)}</p>
   <div class="card-meta path-meta">${pathMeta(p)}</div>
+  <div class="path-actions" id="path-actions"><a class="btn primary" href="/login/?mode=signup&amp;next=${encodeURIComponent(`/paths/${p.meta.id}/`)}">Follow this path</a></div>
   <p class="path-progress" id="path-progress" hidden></p>
 </header>
 ${p.intro ? `<div class="prose path-intro">${md(p.intro)}</div>` : ''}
@@ -489,7 +490,16 @@ await write(
     paths.map((p) => ({
       id: p.meta.id,
       title: p.meta.title,
-      stages: p.stages.map((s) => ({ id: s.id, title: s.title, items: s.steps.filter((st) => st.ref && (st.kind === 'book' || st.kind === 'experiment') && !st.optional).map((st) => st.ref) })),
+      summary: p.meta.summary,
+      stages: p.stages.map((s) => {
+        const tracked = s.steps.filter((st) => (st.kind === 'book' || st.kind === 'experiment') && !st.optional);
+        return {
+          id: s.id,
+          title: s.title,
+          items: tracked.map((st) => st.ref),
+          steps: tracked.map((st) => ({ id: st.ref, kind: st.kind, title: st.title, url: st.url, note: st.note || '' })),
+        };
+      }),
     }))
   )
 );
@@ -542,6 +552,8 @@ const homeBody = `<section class="hero">
   <div><div class="how-top"><span class="how-num">02</span>${icon('moonHalf', { scale: 3 })}</div><h3>Track it</h3><p>Your private notebook keeps a journal entry for every session — new moon to full moon.</p></div>
   <div><div class="how-top"><span class="how-num">03</span>${icon('star', { scale: 3 })}</div><h3>Share it</h3><p>Publish a write-up to the community, swap tips, and suggest new experiments.</p></div>
 </section>
+
+<div id="home-next" class="home-next" hidden></div>
 
 <section>
   <div class="section-row"><h2 class="section-title">The road map</h2><a href="/paths/road-map/">Full road map →</a></div>
