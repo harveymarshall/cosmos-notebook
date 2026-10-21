@@ -41,6 +41,18 @@ jobs:
             echo "$k=$val" >> "$GITHUB_ENV"
           done
 
+      - name: Set up Rust for the Stellar Lab engine
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sim/stellar
+
+      - name: Test and build the Stellar Lab engine (Rust → WebAssembly)
+        run: npm run test:wasm && npm run build:wasm
+
       - name: Run tests
         run: node --test api/test/*.test.js test/*.test.js
 
@@ -48,6 +60,7 @@ jobs:
         run: node build.js
         env:
           COGNITO_REGION: ${{ env.AWS_REGION }}
+          REQUIRE_WASM: '1'
 
       - name: Package API
         run: cd api && zip -qr ../lambda.zip index.mjs package.json src -x 'src/fake-dynamo.js'

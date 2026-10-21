@@ -38,7 +38,12 @@ const hashOf = async (dir) => {
   await walk(dir);
   return h;
 };
-const ASSET_VERSION = (await hashOf(join(ROOT, 'public'))).update((await hashOf(join(ROOT, 'web'))).digest('hex')).update((await hashOf(join(ROOT, 'src'))).digest('hex')).digest('hex').slice(0, 10);
+const ASSET_VERSION = (await hashOf(join(ROOT, 'public')))
+  .update((await hashOf(join(ROOT, 'web'))).digest('hex'))
+  .update((await hashOf(join(ROOT, 'src'))).digest('hex'))
+  .update((await hashOf(join(ROOT, 'sim/stellar/src'))).digest('hex'))
+  .digest('hex')
+  .slice(0, 10);
 
 // ---------- content ----------
 
@@ -114,6 +119,7 @@ const NAV = [
   ['/library/', 'Library'],
   ['/paths/', 'Paths'],
   ['/tonight/', 'Tonight'],
+  ['/lab/', 'Lab'],
   ['/community/', 'Community'],
   ['/about/', 'About'],
 ];
@@ -264,6 +270,19 @@ await mkdir(join(OUT, 'js/lib'), { recursive: true });
 for (const f of ['markdown.js', 'labels.js', 'icons.js', 'astro.js', 'charts.js']) await cp(join(ROOT, 'src', f), join(OUT, 'js/lib', f));
 
 await cp(join(ROOT, 'content/events.json'), join(OUT, 'events.json')).catch(() => {});
+
+// Stellar Lab's engine: Rust (sim/stellar) compiled to WebAssembly by `npm run build:wasm`.
+// CI builds it first and sets REQUIRE_WASM so a deploy can never go out without it.
+const WASM_SRC = join(ROOT, 'sim/stellar/target/wasm32-unknown-unknown/release/stellar.wasm');
+await mkdir(join(OUT, 'wasm'), { recursive: true });
+const hasWasm = await cp(WASM_SRC, join(OUT, 'wasm/stellar.wasm')).then(
+  () => true,
+  () => false
+);
+if (!hasWasm) {
+  if (process.env.REQUIRE_WASM) throw new Error('sim/stellar has not been built — run `npm run build:wasm` first.');
+  console.warn('Note: Stellar Lab engine not built (run `npm run build:wasm`); /lab/ will say it could not load.');
+}
 
 // Sign-in settings for the browser. Without them the site still works, minus accounts.
 const config = {
@@ -507,6 +526,28 @@ await write(
 // The old plan page now lives on as the Road Map path
 await write('plan/index.html', redirect('/paths/road-map/'));
 
+// Stellar Lab
+const labNotes = markdown(parseFrontMatter(await readFile(join(ROOT, 'content/lab.md'), 'utf8')).body);
+await write(
+  'lab/index.html',
+  layout({
+    title: 'Stellar Lab',
+    description: 'Set the mass of a star and watch its whole life — red giants, supernovae, neutron stars and black holes — simulated in your browser.',
+    path: '/lab/',
+    wide: true,
+    script: 'lab',
+    hasMath: labNotes.hasMath,
+    body: `<header class="page-head">
+  <p class="eyebrow">Lab · Simulator</p>
+  <h1>Stellar Lab</h1>
+  <p class="lede">Pick a star's mass and watch its whole life play out — then keep piling mass onto whatever's left until it explodes or collapses.</p>
+</header>
+<div id="app" class="app lab" aria-live="polite"><p class="muted loading">Warming up the star…</p></div>
+<noscript><div class="notice">The simulator needs JavaScript and WebAssembly.</div></noscript>
+<article class="entry lab-notes"><div class="prose">${labNotes.html}</div></article>`,
+  })
+);
+
 // About
 const aboutSrc = await readFile(join(ROOT, 'content/about.md'), 'utf8').catch(() => '');
 const about = markdown(parseFrontMatter(aboutSrc).body);
@@ -611,7 +652,7 @@ await write(
 
 // Sitemap
 const abs = (p) => `${siteUrl}${p}`;
-const urls = ['/', '/library/', '/paths/', ...paths.map((p) => `/paths/${p.meta.id}/`), '/tonight/', '/community/', '/about/', ...experiments.map((e) => `/experiments/${e.slug}/`), ...books.map((b) => `/reading/${b.slug}/`)];
+const urls = ['/', '/library/', '/paths/', ...paths.map((p) => `/paths/${p.meta.id}/`), '/tonight/', '/lab/', '/community/', '/about/', ...experiments.map((e) => `/experiments/${e.slug}/`), ...books.map((b) => `/reading/${b.slug}/`)];
 await write(
   'sitemap.xml',
   `<?xml version="1.0" encoding="UTF-8"?>

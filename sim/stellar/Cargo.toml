@@ -1,0 +1,19 @@
+[package]
+name = "stellar"
+version = "0.1.0"
+edition = "2021"
+description = "Stellar Lab: a star's life from its mass, simulated and drawn in WebAssembly for Cosmos Notebook"
+license = "MIT"
+publish = false
+
+# No dependencies: the browser talks to plain C-ABI exports (see src/lib.rs),
+# so there is no wasm-bindgen or wasm-pack step — just `cargo build`.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -2,11 +2,13 @@
   "name": "cosmos-notebook",
   "version": "2.0.0",
   "private": true,
-  "description": "A community lab notebook for learning astrophysics and quantum physics at home. Static site + serverless API on AWS (S3, CloudFront, Cognito, Lambda, DynamoDB). Zero npm dependencies.",
+  "description": "A community lab notebook for learning astrophysics and quantum physics at home. Static site + serverless API on AWS (S3, CloudFront, Cognito, Lambda, DynamoDB). Zero npm dependencies; the Stellar Lab simulator is Rust compiled to WebAssembly.",
   "type": "module",
   "engines": { "node": ">=20" },
   "scripts": {
     "build": "node build.js",
+    "build:wasm": "cargo build --release --target wasm32-unknown-unknown --manifest-path sim/stellar/Cargo.toml",
+    "test:wasm": "cargo test --release --manifest-path sim/stellar/Cargo.toml",
     "dev": "node build.js --drafts && node scripts/dev-server.js",
     "test": "node --test api/test/*.test.js test/*.test.js",
     "new": "node scripts/new.js"

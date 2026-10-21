@@ -8,6 +8,7 @@ A free community lab notebook for learning astrophysics and quantum physics at h
 - **Community feed:** members can share a write-up or observing night; others can like and comment.
 - **Vetted suggestions:** members suggest new experiments, books and resources; admins review, edit and approve them before they join the library.
 - **Journal tabs:** each experiment gets a folder tab per session (tap **+** for a new one), plus a Write-up tab — the only part that can be shared.
+- **Stellar Lab** (`/lab/`): set a star's mass and watch its whole life — red giant, planetary nebula, supernova, neutron star or black hole — on a pixel-art view and a live HR diagram. You can keep adding mass to a white dwarf or neutron star until it goes Type Ia or collapses. The simulation is Rust compiled to WebAssembly and runs on the device.
 - **Tonight's sky:** the Moon's phase, when it gets dark, which planets and bright clusters are well placed (all calculated on the device), an hourly cloud forecast with a GO / MAYBE / NO-GO verdict, and upcoming meteor showers and eclipses you can add to your calendar.
 - **Auto-graphs:** any table of numbers in a journal entry, write-up, observing log or shared post becomes a pixel-style chart — live as you type. Pick what goes on each axis, add a best-fit line (with slope and R²), and each experiment's **Data** tab joins every session's tables into one graph with a CSV download.
 - **Light, dark and red modes:** red is a night-vision mode with no white light at all, for using the site outside at the telescope.
@@ -38,6 +39,16 @@ Open <http://localhost:4321> and create an account. The local server imitates AW
 - Data is saved in `.dev-data/`. Delete that folder to start fresh.
 
 Run all tests (API and astronomy) with `node --test api/test/*.test.js test/*.test.js`.
+
+**Stellar Lab** needs [Rust](https://rustup.rs) to build its engine (once, and after changing `sim/stellar`):
+
+```bash
+rustup target add wasm32-unknown-unknown
+npm run build:wasm      # → sim/stellar/target/…/stellar.wasm, copied into dist/ by build.js
+npm run test:wasm       # the physics tests
+```
+
+Without it the rest of the site builds fine; `/lab/` just says the simulator couldn't load. GitHub Actions installs Rust and builds it on every run.
 
 ---
 
@@ -151,6 +162,10 @@ infra/              the CloudFormation template
 ```
 
 **Adding a feature** usually means adding a route in `api/src/app.js` (and a store method in `api/src/store.js` if it needs new data), a test in `api/test/`, and a page in `web/js/pages/` registered with `appPage(...)` in `build.js`.
+
+## Stellar Lab: how it works
+
+`sim/stellar` is a small Rust crate with no dependencies. `physics.rs` evolves a star from scaling laws (mass–luminosity, main-sequence lifetime ∝ M^-2.5, the white-dwarf initial–final mass relation, the Chandrasekhar and TOV limits) through each stage; `render.rs` draws a 320×180 pixel view (particles for winds, nebulae and debris; point-lens bending of background stars around black holes) and a 160×180 HR diagram into byte buffers. `lib.rs` exposes plain C-ABI functions, so there's no wasm-bindgen: `web/js/stellar.js` instantiates the module and copies the buffers onto canvases, and `web/js/pages/lab.js` is the controls. Explosions are softened for visitors who prefer reduced motion. The explainer text under the simulator is `content/lab.md`.
 
 ## Tonight's sky: how it works
 
