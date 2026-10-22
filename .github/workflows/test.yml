@@ -23,6 +23,18 @@ jobs:
           node-version: 22
       - name: Install dependencies (if any)
         run: if [ -f package-lock.json ]; then npm ci; fi
+      - name: Set up Rust for the Stellar Lab engine
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sim/stellar
+
+      - name: Test and build the Stellar Lab engine (Rust → WebAssembly)
+        run: npm run test:wasm && npm run build:wasm
+
       - name: Run tests
         run: npm test
       - name: Build site
@@ -30,3 +42,4 @@ jobs:
         env:
           COGNITO_REGION: eu-west-2
           COGNITO_CLIENT_ID: test-client
+          REQUIRE_WASM: '1'
