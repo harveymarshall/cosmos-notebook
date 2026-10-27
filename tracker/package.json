@@ -1,0 +1,7 @@
+{
+  "name": "cosmos-notebook-tracker",
+  "private": true,
+  "type": "module",
+  "description": "Mission Control's tracker (one AWS Lambda): fetches spacecraft positions from JPL Horizons, live Deep Space Network contacts and mission news, and saves them as JSON for the /missions/ page. Uses the AWS SDK built into the Lambda runtime.",
+  "main": "index.mjs"
+}

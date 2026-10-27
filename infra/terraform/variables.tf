@@ -34,6 +34,12 @@ variable "api_burst_limit" {
   default     = 40
 }
 
+variable "tracker_dsn_schedule" {
+  description = "How often Mission Control checks which Deep Space Network dishes are talking to which spacecraft."
+  type        = string
+  default     = "rate(5 minutes)"
+}
+
 # ---------------------------------------------------------------------------------------
 # Names of resources that CloudFormation created with generated names. They are filled in
 # by infra/terraform/scripts/discover.sh (existing.auto.tfvars) so Terraform adopts the

@@ -10,7 +10,8 @@
     "build:wasm": "cargo build --release --target wasm32-unknown-unknown --manifest-path sim/stellar/Cargo.toml",
     "test:wasm": "cargo test --release --manifest-path sim/stellar/Cargo.toml",
     "dev": "node build.js --drafts && node scripts/dev-server.js",
-    "test": "node --test api/test/*.test.js test/*.test.js",
-    "new": "node scripts/new.js"
+    "test": "node --test api/test/*.test.js test/*.test.js tracker/test/*.test.js",
+    "new": "node scripts/new.js",
+    "live": "node tracker/run-local.mjs"
   }
 }
