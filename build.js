@@ -42,6 +42,7 @@ const ASSET_VERSION = (await hashOf(join(ROOT, 'public')))
   .update((await hashOf(join(ROOT, 'web'))).digest('hex'))
   .update((await hashOf(join(ROOT, 'src'))).digest('hex'))
   .update((await hashOf(join(ROOT, 'sim/stellar/src'))).digest('hex'))
+  .update((await hashOf(join(ROOT, 'tracker/src'))).digest('hex'))
   .digest('hex')
   .slice(0, 10);
 
@@ -119,6 +120,7 @@ const NAV = [
   ['/library/', 'Library'],
   ['/paths/', 'Paths'],
   ['/tonight/', 'Tonight'],
+  ['/missions/', 'Missions'],
   ['/lab/', 'Lab'],
   ['/community/', 'Community'],
   ['/about/', 'About'],
@@ -267,7 +269,9 @@ await mkdir(OUT, { recursive: true });
 await cp(join(ROOT, 'public'), OUT, { recursive: true });
 await cp(join(ROOT, 'web/js'), join(OUT, 'js'), { recursive: true });
 await mkdir(join(OUT, 'js/lib'), { recursive: true });
-for (const f of ['markdown.js', 'labels.js', 'icons.js', 'astro.js', 'charts.js']) await cp(join(ROOT, 'src', f), join(OUT, 'js/lib', f));
+for (const f of ['markdown.js', 'labels.js', 'icons.js', 'astro.js', 'charts.js', 'fleet.js']) await cp(join(ROOT, 'src', f), join(OUT, 'js/lib', f));
+// Mission Control's mission list is shared with the tracker Lambda
+await cp(join(ROOT, 'tracker/src/missions.js'), join(OUT, 'js/lib/missions.js'));
 
 await cp(join(ROOT, 'content/events.json'), join(OUT, 'events.json')).catch(() => {});
 
@@ -548,6 +552,30 @@ await write(
   })
 );
 
+// Mission Control: live spacecraft positions, Deep Space Network contacts and news.
+// The live data (live/*.json) is written by the tracker Lambda, not by this build.
+const missionNotes = markdown(parseFrontMatter(await readFile(join(ROOT, 'content/missions.md'), 'utf8')).body);
+await write(
+  'missions/index.html',
+  layout({
+    title: 'Mission Control',
+    description: 'Follow the spacecraft exploring the Solar System right now — live positions, how long their signals take to reach us, which dishes are listening, and the latest news.',
+    path: '/missions/',
+    wide: true,
+    script: 'missions',
+    hasMath: missionNotes.hasMath,
+    body: `<header class="page-head">
+  <p class="eyebrow">Live · Deep space</p>
+  <h1>Mission Control</h1>
+  <p class="lede">Where the robots we've sent into the Solar System are right now, how long their signals take to reach us, and which giant dishes on Earth are listening.</p>
+</header>
+<div id="app" class="app missions" aria-live="polite"><p class="muted loading">Pointing the dishes…</p></div>
+<noscript><div class="notice">Mission Control needs JavaScript.</div></noscript>
+<article class="entry mission-notes"><div class="prose">${missionNotes.html}</div></article>
+<p class="muted small mission-credits">Positions: <a href="https://ssd.jpl.nasa.gov/horizons/" rel="noopener" target="_blank">NASA/JPL Horizons</a>. Dishes: <a href="https://eyes.nasa.gov/dsn/dsn.html" rel="noopener" target="_blank">NASA DSN Now</a>. Headlines: <a href="https://spaceflightnewsapi.net/" rel="noopener" target="_blank">Spaceflight News API</a>, linking to the original stories.</p>`,
+  })
+);
+
 // About
 const aboutSrc = await readFile(join(ROOT, 'content/about.md'), 'utf8').catch(() => '');
 const about = markdown(parseFrontMatter(aboutSrc).body);
@@ -652,7 +680,7 @@ await write(
 
 // Sitemap
 const abs = (p) => `${siteUrl}${p}`;
-const urls = ['/', '/library/', '/paths/', ...paths.map((p) => `/paths/${p.meta.id}/`), '/tonight/', '/lab/', '/community/', '/about/', ...experiments.map((e) => `/experiments/${e.slug}/`), ...books.map((b) => `/reading/${b.slug}/`)];
+const urls = ['/', '/library/', '/paths/', ...paths.map((p) => `/paths/${p.meta.id}/`), '/tonight/', '/missions/', '/lab/', '/community/', '/about/', ...experiments.map((e) => `/experiments/${e.slug}/`), ...books.map((b) => `/reading/${b.slug}/`)];
 await write(
   'sitemap.xml',
   `<?xml version="1.0" encoding="UTF-8"?>

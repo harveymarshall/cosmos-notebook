@@ -72,7 +72,13 @@ data "aws_iam_policy_document" "deploy" {
   statement {
     effect    = "Allow"
     actions   = ["lambda:UpdateFunctionCode", "lambda:GetFunction", "lambda:GetFunctionConfiguration"]
-    resources = [aws_lambda_function.api.arn]
+    resources = [aws_lambda_function.api.arn, aws_lambda_function.tracker.arn]
+  }
+  # Run the tracker once after a deploy, so Mission Control has fresh data straight away
+  statement {
+    effect    = "Allow"
+    actions   = ["lambda:InvokeFunction"]
+    resources = [aws_lambda_function.tracker.arn]
   }
 }
 
