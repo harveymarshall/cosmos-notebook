@@ -5,3 +5,6 @@ table_name              = "cosmos-notebook-Table-1FCRGYWF3422D"
 api_role_name           = "cosmos-notebook-ApiFunctionRole-4fjaXQteBequ"
 deploy_role_name        = "cosmos-notebook-GitHubDeployRole-6f8oGUDUwPjY"
 api_invoke_statement_id = "cosmos-notebook-ApiInvokePermission-Z0tLg1KStnBk"
+
+# The site owner (protected in the admin console)
+owner_sub = "b6329254-b081-704c-1efa-acad87257372"
