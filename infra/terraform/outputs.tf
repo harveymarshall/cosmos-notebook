@@ -2,7 +2,7 @@
 
 output "site_url" {
   description = "SITE_URL - the live site"
-  value       = "https://${aws_cloudfront_distribution.site.domain_name}"
+  value       = local.custom_domain ? "https://${var.domain_name}" : "https://${aws_cloudfront_distribution.site.domain_name}"
 }
 
 output "s3_bucket" {
