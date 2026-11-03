@@ -83,12 +83,13 @@ resource "cloudflare_dns_record" "site" {
   comment = "${var.project} site (Terraform)"
 }
 
-# Sends www.<domain> to the bare domain so there's one address for links and search engines.
+# Sends www.<domain> and the *.cloudfront.net address to the bare domain, so there's one
+# address for links and search engines. /api/* doesn't use this function, so it's unaffected.
 resource "aws_cloudfront_function" "www_redirect" {
   count   = local.custom_domain ? 1 : 0
   name    = "${var.project}-www-redirect"
   runtime = "cloudfront-js-2.0"
-  comment = "Redirect www to the bare domain, then serve index.html for folder URLs"
+  comment = "Redirect www and cloudfront.net to the bare domain, then serve index.html for folder URLs"
   publish = true
   code    = templatefile("${path.module}/functions/www-redirect.js.tftpl", { domain = var.domain_name })
 }
