@@ -124,4 +124,97 @@ export function registerAdminMembers({ route, store, members, ownerSub, now, mak
   registerActions({ route, admin, store, members, ownerSub, now, log, subOf, reasonOf, findMember, protect, audit });
 }
 
-function registerActions() {}
+function registerActions({ route, admin, store, members, ownerSub, now, log, subOf, reasonOf, findMember, protect, audit }) {
+  route('POST', '/api/admin/members/:sub/suspend', admin, async ({ user, params, body }) => {
+    const m = await findMember(subOf(params));
+    protect(user, m);
+    const reason = reasonOf(body);
+    await members.disable(m.username);
+    await members.signOut(m.username);
+    await store.setSuspended(m.sub, true, now());
+    try {
+      const hidden = await store.setMemberHidden(m.sub, true);
+      await audit(user, 'suspend', m.sub, { reason, detail: hidden });
+      return { suspended: true, hidden };
+    } catch (err) {
+      log.error?.(err);
+      await audit(user, 'suspend', m.sub, { reason, detail: { partial: 'hide-content' } });
+      return { partial: true, step: 'hide-content' };
+    }
+  });
+
+  route('POST', '/api/admin/members/:sub/unsuspend', admin, async ({ user, params, body }) => {
+    const m = await findMember(subOf(params));
+    protect(user, m);
+    await members.enable(m.username);
+    await store.setSuspended(m.sub, false, now());
+    const shown = await store.setMemberHidden(m.sub, false);
+    await audit(user, 'unsuspend', m.sub, { reason: reasonOf(body), detail: shown });
+    return { suspended: false, shown };
+  });
+
+  route('POST', '/api/admin/members/:sub/reset-password', admin, async ({ user, params, body }) => {
+    const m = await findMember(subOf(params));
+    await members.resetPassword(m.username);
+    await audit(user, 'reset-password', m.sub, { reason: reasonOf(body) });
+    return { reset: true };
+  });
+
+  route('POST', '/api/admin/members/:sub/admin', admin, async ({ user, params, body }) => {
+    const m = await findMember(subOf(params));
+    if (ownerSub && m.sub === ownerSub) throw new HttpError(403, "The owner account can't be changed here");
+    if (!ownerSub || user.sub !== ownerSub) throw new HttpError(403, 'Only the owner can change admins');
+    const grant = body?.grant === true;
+    await (grant ? members.addAdmin(m.username) : members.removeAdmin(m.username));
+    await audit(user, grant ? 'grant-admin' : 'revoke-admin', m.sub, { reason: reasonOf(body) });
+    return { isAdmin: grant, note: 'Takes effect the next time they sign in' };
+  });
+
+  // Each step is safe to repeat and the login goes last, so a failed delete can be re-run.
+  route('DELETE', '/api/admin/members/:sub', admin, async ({ user, params, body }) => {
+    const m = await findMember(subOf(params));
+    protect(user, m);
+    const confirm = str(body, 'confirmEmail', { required: true, max: 320 }).toLowerCase();
+    if (confirm !== m.email.toLowerCase()) {
+      throw new HttpError(400, "confirmEmail: doesn't match this member's email", { field: 'confirmEmail' });
+    }
+    const removed = { posts: 0, comments: 0, likes: 0, submissions: 0, anonymised: 0, items: 0 };
+    for (const p of await store.memberPosts(m.sub)) {
+      await store.deletePost(p.postId);
+      removed.posts++;
+    }
+    for (const c of await store.memberComments(m.sub)) {
+      await store.deleteComment(c.postId, c.commentId);
+      removed.comments++;
+    }
+    for (const l of await store.memberLikes(m.sub)) {
+      await store.unlike(l.postId, m.sub);
+      removed.likes++;
+    }
+    for (const s of await store.listSubmissionsByUser(m.sub)) {
+      if (s.status === 'approved') {
+        await store.anonymiseSubmission(s);
+        removed.anonymised++;
+      } else {
+        await store.deleteSubmission(s.id);
+        removed.submissions++;
+      }
+    }
+    removed.items = await store.deleteUserItems(m.sub);
+    await members.remove(m.username);
+    await audit(user, 'delete', m.sub, { reason: reasonOf(body), detail: removed });
+    return { deleted: true, removed };
+  });
+
+  route('POST', '/api/admin/maintenance/reindex', admin, async ({ user }) => {
+    const total = { posts: 0, comments: 0, likes: 0 };
+    for (const p of await store.listAllPosts()) {
+      const c = await store.reindexPost(p.postId);
+      total.posts += c.posts;
+      total.comments += c.comments;
+      total.likes += c.likes;
+    }
+    await audit(user, 'reindex', '', { detail: total });
+    return total;
+  });
+}

@@ -270,3 +270,141 @@ test('admin can remove any comment, and it is logged', async () => {
   assert.equal(audit[0].targetSub, ALICE);
   assert.equal(audit[0].reason, 'spam');
 });
+
+test('action routes are invisible to members and need a login', async () => {
+  const { call } = setupApp();
+  for (const [method, path] of [
+    ['POST', `/api/admin/members/${BOB}/suspend`],
+    ['POST', `/api/admin/members/${BOB}/unsuspend`],
+    ['POST', `/api/admin/members/${BOB}/reset-password`],
+    ['POST', `/api/admin/members/${BOB}/admin`],
+    ['DELETE', `/api/admin/members/${BOB}`],
+    ['POST', '/api/admin/maintenance/reindex'],
+  ]) {
+    assert.equal((await call(method, path)).status, 401, `${method} ${path} signed out`);
+    assert.equal((await call(method, path, { as: AS.alice, body: {} })).status, 404, `${method} ${path} as member`);
+  }
+});
+
+test('owner protection and who can change admins', async () => {
+  const { call, cognito } = setupApp();
+  for (const path of [`/api/admin/members/${OWNER}/suspend`, `/api/admin/members/${OWNER}/admin`]) {
+    const r = await call('POST', path, { as: AS.owner, body: { grant: false } });
+    assert.equal(r.status, 403);
+    assert.equal(r.data.error, "The owner account can't be changed here");
+  }
+  const del = await call('DELETE', `/api/admin/members/${OWNER}`, { as: AS.owner, body: { confirmEmail: 'owner@example.com' } });
+  assert.equal(del.status, 403);
+
+  // Bob is made an admin by the owner, but can't change admins himself
+  assert.equal((await call('POST', `/api/admin/members/${BOB}/admin`, { as: AS.owner, body: { grant: true } })).status, 200);
+  assert.ok(cognito.users.get(BOB).groups.has('admins'));
+  const bobAdmin = { sub: BOB, groups: '[admins]' };
+  const r = await call('POST', `/api/admin/members/${ALICE}/admin`, { as: bobAdmin, body: { grant: true } });
+  assert.equal(r.status, 403);
+  assert.equal(r.data.error, 'Only the owner can change admins');
+  const self = await call('POST', `/api/admin/members/${BOB}/suspend`, { as: bobAdmin, body: {} });
+  assert.equal(self.data.error, "You can't do that to your own account");
+  assert.equal((await call('POST', `/api/admin/members/${BOB}/admin`, { as: AS.owner, body: { grant: false } })).status, 200);
+  assert.equal(cognito.users.get(BOB).groups.has('admins'), false);
+});
+
+test('suspend hides content and blocks sign-in; unsuspend restores both', async () => {
+  const { call, cognito, seed } = setupApp();
+  const { bobPost } = await seed();
+  let r = await call('POST', `/api/admin/members/${ALICE}/suspend`, { as: AS.owner, body: { reason: 'cooling off' } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data, { suspended: true, hidden: { posts: 1, comments: 1 } });
+  assert.equal(cognito.users.get(ALICE).enabled, false);
+  assert.ok(cognito.users.get(ALICE).signedOutAt);
+  assert.deepEqual((await call('GET', '/api/feed')).data.posts.map((p) => p.authorSub), [BOB]);
+  assert.equal((await call('GET', `/api/posts/${bobPost}/comments`)).data.comments.length, 0);
+  assert.equal((await call('POST', `/api/posts/${bobPost}/comments`, { as: AS.alice, body: { body: 'again' } })).status, 403);
+  assert.equal((await call('GET', `/api/admin/members/${ALICE}`, { as: AS.owner })).data.member.suspended, true);
+
+  r = await call('POST', `/api/admin/members/${ALICE}/unsuspend`, { as: AS.owner, body: {} });
+  assert.deepEqual(r.data, { suspended: false, shown: { posts: 1, comments: 1 } });
+  assert.equal(cognito.users.get(ALICE).enabled, true);
+  assert.equal((await call('GET', '/api/feed')).data.posts.length, 2);
+  assert.equal((await call('GET', `/api/posts/${bobPost}/comments`)).data.comments.length, 1);
+  assert.equal((await call('POST', `/api/posts/${bobPost}/comments`, { as: AS.alice, body: { body: 'back' } })).status, 201);
+
+  const actions = (await call('GET', '/api/admin/audit', { as: AS.owner })).data.entries.map((a) => a.action);
+  assert.deepEqual(actions.slice(0, 2), ['unsuspend', 'suspend']);
+});
+
+test('suspend reports a partial result when hiding content fails', async () => {
+  const { call, store, seed } = setupApp();
+  await seed();
+  store.setMemberHidden = async () => {
+    throw new Error('dynamo down');
+  };
+  const r = await call('POST', `/api/admin/members/${ALICE}/suspend`, { as: AS.owner, body: {} });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data, { partial: true, step: 'hide-content' });
+  assert.equal((await store.getAccount(ALICE)).suspended, true, 'sign-in is still blocked');
+  const entry = (await call('GET', '/api/admin/audit', { as: AS.owner })).data.entries[0];
+  assert.deepEqual([entry.action, entry.detail.partial], ['suspend', 'hide-content']);
+});
+
+test('reset password', async () => {
+  const { call, cognito } = setupApp();
+  assert.equal((await call('POST', `/api/admin/members/${ALICE}/reset-password`, { as: AS.owner, body: {} })).status, 200);
+  assert.equal(cognito.users.get(ALICE).status, 'RESET_REQUIRED');
+});
+
+test('delete removes every trace of a member and keeps counts right', async () => {
+  const { call, store, cognito, seed } = setupApp();
+  const { bobPost } = await seed();
+  await call('POST', '/api/me/observations', { as: AS.alice, body: { title: 'The Moon' } });
+  await call('POST', '/api/submissions', { as: AS.alice, body: { type: 'book', title: 'Cosmos', summary: 'A classic book about space', track: 'astro', link: 'https://example.com/cosmos' } });
+  await call('POST', '/api/submissions', { as: AS.alice, body: { type: 'book', title: 'Pale Blue Dot', summary: 'Another classic book', track: 'astro', link: 'https://example.com/pbd' } });
+  const subs = (await call('GET', '/api/me/submissions', { as: AS.alice })).data.submissions;
+  await call('POST', `/api/admin/submissions/${subs[0].id}/review`, { as: AS.owner, body: { decision: 'approve' } });
+
+  const wrong = await call('DELETE', `/api/admin/members/${ALICE}`, { as: AS.owner, body: { confirmEmail: 'bob@example.com' } });
+  assert.equal(wrong.status, 400);
+  assert.equal(wrong.data.error, "confirmEmail: doesn't match this member's email");
+
+  const r = await call('DELETE', `/api/admin/members/${ALICE}`, { as: AS.owner, body: { confirmEmail: 'Alice@Example.com', reason: 'asked to leave' } });
+  assert.equal(r.status, 200);
+  // items: PROFILE, PROG#weigh-jupiter, OBS#… (no ACCOUNT: the seed never calls GET /api/me)
+  assert.deepEqual(r.data, { deleted: true, removed: { posts: 1, comments: 1, likes: 1, submissions: 1, anonymised: 1, items: 3 } });
+
+  assert.equal(cognito.users.has(ALICE), false);
+  assert.equal(await store.getProfile(ALICE), undefined);
+  assert.deepEqual((await call('GET', '/api/feed')).data.posts.map((p) => p.authorSub), [BOB]);
+  const bob = (await call('GET', `/api/posts/${bobPost}`)).data.post;
+  assert.deepEqual([bob.likeCount, bob.commentCount], [0, 0]);
+  const library = (await call('GET', '/api/library')).data.items;
+  assert.deepEqual(library.map((i) => i.contributor), ['A former member']);
+  const entry = (await call('GET', '/api/admin/audit', { as: AS.owner })).data.entries[0];
+  assert.deepEqual([entry.action, entry.targetSub, entry.reason], ['delete', ALICE, 'asked to leave']);
+  assert.equal((await call('GET', `/api/admin/members/${ALICE}`, { as: AS.owner })).status, 404);
+});
+
+test('a delete that failed part-way can be run again', async () => {
+  const { call, cognito, seed } = setupApp();
+  await seed();
+  const realRemove = cognito.users.delete.bind(cognito.users);
+  let fail = true;
+  cognito.users.delete = (k) => {
+    if (fail) throw Object.assign(new Error('nope'), { name: 'InternalErrorException' });
+    return realRemove(k);
+  };
+  const first = await call('DELETE', `/api/admin/members/${ALICE}`, { as: AS.owner, body: { confirmEmail: 'alice@example.com' } });
+  assert.equal(first.status, 502);
+  fail = false;
+  const second = await call('DELETE', `/api/admin/members/${ALICE}`, { as: AS.owner, body: { confirmEmail: 'alice@example.com' } });
+  assert.equal(second.status, 200);
+  assert.equal(cognito.users.has(ALICE), false);
+});
+
+test('reindex is idempotent and admin-only', async () => {
+  const { call, seed } = setupApp();
+  await seed();
+  const a = await call('POST', '/api/admin/maintenance/reindex', { as: AS.owner, body: {} });
+  assert.equal(a.status, 200);
+  assert.deepEqual(a.data, { posts: 2, comments: 1, likes: 1 });
+  assert.deepEqual((await call('POST', '/api/admin/maintenance/reindex', { as: AS.owner, body: {} })).data, a.data);
+});
