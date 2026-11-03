@@ -4,3 +4,4 @@ dist/
 lambda.zip
 .DS_Store
 *.log
+sim/stellar/target/

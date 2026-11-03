@@ -1,0 +1,5 @@
+.build/
+.terraform/
+*.tfplan
+tfplan
+plan.txt

@@ -12,8 +12,10 @@ for v in AWS_REGION S3_BUCKET CLOUDFRONT_DISTRIBUTION_ID API_FUNCTION_NAME COGNI
 done
 
 cd "$(dirname "$0")/.."
+# Stellar Lab engine (needs Rust: rustup target add wasm32-unknown-unknown)
+npm run --silent test:wasm >/dev/null && npm run --silent build:wasm
 node --test api/test/*.test.js test/*.test.js >/dev/null && echo "Tests passed"
-COGNITO_REGION="$AWS_REGION" node build.js
+COGNITO_REGION="$AWS_REGION" REQUIRE_WASM=1 node build.js
 
 rm -f lambda.zip
 (cd api && zip -qr ../lambda.zip index.mjs package.json src -x 'src/fake-dynamo.js')
