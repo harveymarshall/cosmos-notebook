@@ -22,6 +22,23 @@ variable "github_branch" {
   default     = "main"
 }
 
+variable "domain_name" {
+  description = "Custom domain for the site (DOMAIN_NAME in deploy.env), e.g. cosmosnotebook.com. Empty = CloudFront address only."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.domain_name == "" || can(regex("^[a-z0-9-]+(\\.[a-z0-9-]+)+$", var.domain_name))
+    error_message = "domain_name must be a bare domain like cosmosnotebook.com (no https:// or www.)."
+  }
+}
+
+variable "cloudflare_zone_id" {
+  description = "Cloudflare zone ID for domain_name (CLOUDFLARE_ZONE_ID repository secret)."
+  type        = string
+  default     = ""
+}
+
 variable "api_rate_limit" {
   description = "Average API requests per second allowed across the whole site (protects the bill)."
   type        = number

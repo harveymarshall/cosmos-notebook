@@ -14,5 +14,7 @@ for k in AWS_REGION TF_STATE_BUCKET TF_PLAN_ROLE_ARN TF_APPLY_ROLE_ARN; do
     echo "$k=${!k}" >>"${GITHUB_ENV:-/dev/null}"
   fi
 done
+# Optional: the custom domain (empty = keep the *.cloudfront.net address)
+echo "TF_VAR_domain_name=${DOMAIN_NAME:-}" >>"${GITHUB_ENV:-/dev/null}"
 echo "ready=$ready" >>"${GITHUB_OUTPUT:-/dev/null}"
 if [ "$ready" != true ] && [ "${1:-}" = "--require" ]; then exit 1; fi

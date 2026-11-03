@@ -52,7 +52,6 @@ resource "aws_cognito_user_pool" "members" {
 resource "aws_cognito_user_pool_client" "web" {
   name                          = "web"
   user_pool_id                  = aws_cognito_user_pool.members.id
-  generate_secret               = false
   explicit_auth_flows           = ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
   prevent_user_existence_errors = "ENABLED"
   enable_token_revocation       = true
@@ -64,6 +63,12 @@ resource "aws_cognito_user_pool_client" "web" {
     access_token  = "minutes"
     id_token      = "minutes"
     refresh_token = "days"
+  }
+
+  # No client secret (the browser can't keep one). generate_secret is left unset because
+  # AWS doesn't report it back on import, and setting it would force a new client ID.
+  lifecycle {
+    ignore_changes = [generate_secret]
   }
 }
 
