@@ -132,6 +132,7 @@ resource "aws_cloudfront_distribution" "site" {
   http_version        = "http2and3"
   is_ipv6_enabled     = true
   price_class         = "PriceClass_100"
+  aliases             = local.site_domains
 
   origin {
     origin_id                = local.site_origin_id
@@ -161,7 +162,7 @@ resource "aws_cloudfront_distribution" "site" {
 
     function_association {
       event_type   = "viewer-request"
-      function_arn = aws_cloudfront_function.index_rewrite.arn
+      function_arn = local.custom_domain ? aws_cloudfront_function.www_redirect[0].arn : aws_cloudfront_function.index_rewrite.arn
     }
   }
 
@@ -192,8 +193,12 @@ resource "aws_cloudfront_distribution" "site" {
     }
   }
 
+  # The custom domain's certificate once DOMAIN_NAME is set (domain.tf), else CloudFront's own.
   viewer_certificate {
-    cloudfront_default_certificate = true
+    cloudfront_default_certificate = local.custom_domain ? null : true
+    acm_certificate_arn            = local.custom_domain ? aws_acm_certificate_validation.site[0].certificate_arn : null
+    ssl_support_method             = local.custom_domain ? "sni-only" : null
+    minimum_protocol_version       = local.custom_domain ? "TLSv1.2_2021" : null
   }
 
   lifecycle {

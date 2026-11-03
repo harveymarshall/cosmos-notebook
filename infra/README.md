@@ -72,3 +72,18 @@ Set `github_repo` in `infra/terraform/variables.tf`, run the bootstrap in your a
 three values in `deploy.env`, delete `existing.auto.tfvars` if present, and run the workflow once
 with the repository variable `ALLOW_FRESH_INSTALL` set to `true`. Then
 copy `terraform output` into `deploy.env`.
+
+## Custom domain
+
+The domain is registered at Cloudflare, which also runs its DNS; CloudFront serves the site
+(`infra/terraform/domain.tf`). Nothing is created until `DOMAIN_NAME` is set.
+
+1. Add two repository secrets: `CLOUDFLARE_API_TOKEN` (a token limited to *Zone → DNS → Edit*
+   for this zone) and `CLOUDFLARE_ZONE_ID` (from the zone's Overview page).
+2. Set `DOMAIN_NAME=yourdomain.com` in `deploy.env` and push. The Infrastructure workflow
+   requests a certificate in us-east-1, adds the validation and site records in Cloudflare
+   (DNS only, grey cloud), and attaches the domain to CloudFront. `www.` redirects to the bare domain.
+3. Once that apply has finished, change `SITE_URL` in `deploy.env` to `https://yourdomain.com`
+   so the next deploy builds links and the sitemap with the new address.
+
+The old `*.cloudfront.net` address keeps working.

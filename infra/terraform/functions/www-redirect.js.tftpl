@@ -1,0 +1,33 @@
+// Used instead of index-rewrite.js once a custom domain is set (CloudFront allows one
+// viewer-request function per behaviour). Same folder-URL rewrite, plus a www redirect.
+function handler(event) {
+  var request = event.request;
+  var host = request.headers.host ? request.headers.host.value : '';
+
+  if (host === 'www.${domain}') {
+    var qs = [];
+    for (var key in request.querystring) {
+      var q = request.querystring[key];
+      if (q.multiValue) {
+        for (var i = 0; i < q.multiValue.length; i++) qs.push(key + '=' + q.multiValue[i].value);
+      } else {
+        qs.push(key + '=' + q.value);
+      }
+    }
+    return {
+      statusCode: 301,
+      statusDescription: 'Moved Permanently',
+      headers: {
+        location: { value: 'https://${domain}' + request.uri + (qs.length ? '?' + qs.join('&') : '') }
+      }
+    };
+  }
+
+  var uri = request.uri;
+  if (uri.endsWith('/')) {
+    request.uri = uri + 'index.html';
+  } else if (uri.split('/').pop().indexOf('.') === -1) {
+    request.uri = uri + '/index.html';
+  }
+  return request;
+}
