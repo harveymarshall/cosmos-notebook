@@ -19,7 +19,6 @@ set -euo pipefail
 PROJECT="${PROJECT:-cosmos-notebook}"
 REPO="${REPO:-harveymarshall/cosmos-notebook}"
 REGION="${AWS_REGION:-eu-west-2}"
-STACK="${STACK:-cosmos-notebook}"
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 OWNER="${REPO%%/*}"
 NAME="${REPO##*/}"
@@ -167,7 +166,7 @@ cat >"$TMP/apply.json" <<EOF
      "Action": ["iam:Get*", "iam:List*", "s3:ListAllMyBuckets", "s3:GetBucketLocation", "cloudfront:*",
                 "cognito-idp:CreateUserPool", "cognito-idp:ListUserPools", "cognito-idp:Describe*",
                 "dynamodb:Describe*", "dynamodb:List*", "lambda:List*", "lambda:Get*", "logs:Describe*", "logs:List*",
-                "apigateway:GET", "cloudformation:ValidateTemplate", "cloudwatch:*", "budgets:ViewBudget",
+                "apigateway:GET", "cloudwatch:*", "budgets:ViewBudget",
                 "acm:*", "route53:*", "ses:*", "scheduler:List*", "scheduler:Get*", "events:List*", "events:Describe*"]},
     {"Sid": "SiteBuckets", "Effect": "Allow", "Action": "s3:*",
      "Resource": ["arn:aws:s3:::${P}-*", "arn:aws:s3:::${P}-*/*"]},
@@ -198,10 +197,6 @@ cat >"$TMP/apply.json" <<EOF
                 "iam:AddClientIDToOpenIDConnectProvider", "iam:RemoveClientIDFromOpenIDConnectProvider",
                 "iam:TagOpenIDConnectProvider", "iam:UntagOpenIDConnectProvider"],
      "Resource": "${OIDC_ARN}"},
-    {"Sid": "Migration", "Effect": "Allow",
-     "Action": ["cloudformation:Describe*", "cloudformation:GetTemplate*", "cloudformation:List*",
-                "cloudformation:UpdateStack", "cloudformation:DeleteStack"],
-     "Resource": "arn:aws:cloudformation:${R}:${A}:stack/${STACK}/*"},
     {"Sid": "NeverDeleteMembersOrData", "Effect": "Deny", "Resource": "*",
      "Action": ["cognito-idp:DeleteUserPool", "dynamodb:DeleteTable", "s3:DeleteBucket",
                 "iam:DeleteOpenIDConnectProvider", "iam:DeleteRolePermissionsBoundary"]},

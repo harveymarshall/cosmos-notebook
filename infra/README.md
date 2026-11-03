@@ -15,11 +15,9 @@ bootstrap below and billing settings such as CloudFront's pricing plan.
 ```
 infra/
   bootstrap/bootstrap.sh          one-time: state bucket + Terraform's own roles
-  terraform/                      the whole site: S3, CloudFront, Cognito, DynamoDB, Lambda, API, IAM
-    scripts/discover.sh           one-time: finds the live CloudFormation resources to import
-    scripts/retire-cloudformation.sh  one-time: hands everything over and removes the old stack
-  cloudformation.yaml             the old template (kept until the migration is finished)
-  cloudformation-retain.yaml      the old template with every resource set to Retain
+  terraform/                      the whole site: S3, CloudFront, Cognito, DynamoDB, Lambda, API, IAM, domain
+    existing.auto.tfvars          names of the live resources (keep - see below)
+    scripts/guard.sh              refuses to plan against empty state
 ```
 
 ## Safety rails
@@ -35,43 +33,29 @@ infra/
   created by the bootstrap script, outside Terraform, so a workflow can never widen its own access.
 - **No keys.** GitHub proves its identity to AWS (OIDC). Plans use a read-only role; applies
   use a separate role that only the `production` environment can use.
-- **No accidental second site.** If Terraform state is empty and there is nothing to import,
-  the workflow refuses to plan (`scripts/guard.sh`).
+- **No accidental second site.** If Terraform state is empty, the workflow refuses to plan
+  (`scripts/guard.sh`) unless `ALLOW_FRESH_INSTALL` is set.
 
-## Moving from CloudFormation (one time)
+## History
 
-The live site was created by the CloudFormation stack `cosmos-notebook`. These steps make
-Terraform adopt the **same** resources — no new site, no downtime, members and data untouched.
-
-0. **Merge the Terraform pull request.** This changes nothing in AWS. Its first workflow run
-   will stop early (Terraform's roles don't exist yet, and the guard refuses to plan without
-   imports) — that's expected.
-1. **Bootstrap (CloudShell, ~2 minutes).** AWS console → region London → CloudShell:
-   ```bash
-   git clone https://github.com/harveymarshall/cosmos-notebook && bash cosmos-notebook/infra/bootstrap/bootstrap.sh
-   ```
-   It prints three values. They are already in `deploy.env`; check they match.
-2. **Protect production (GitHub, 1 minute).** Repo → Settings → Environments → `production`
-   (create it if missing) → **Required reviewers** → add yourself.
-3. **Discover.** Actions → *Infrastructure (Terraform)* → Run workflow → `discover`.
-   This writes `imports.tf` and `existing.auto.tfvars` to the `terraform-import` branch.
-4. **Review the import plan.** Open a pull request from `terraform-import`. The plan should say
-   it will **import** every resource and make only small in-place changes (tags, and the
-   permissions boundary on the two roles). It must not **destroy** or **replace** anything.
-5. **Merge and approve.** Merging runs the plan again; approve the `production` deployment to
-   apply. Terraform now manages everything (CloudFormation still has its record too).
-6. **Retire CloudFormation.** Run workflow → `retire-cloudformation` and approve. It checks
-   Terraform owns everything, marks every stack resource *Retain*, deletes the old stack record
-   (resources stay), and confirms Terraform still sees no changes.
-7. **Tidy up.** Delete `imports.tf`, `infra/cloudformation*.yaml` and `scripts/deploy.sh`'s
-   CloudFormation notes in a final pull request.
+The site was first created by a CloudFormation stack. In November 2026 Terraform imported
+every resource, and the stack was retired (resources kept, record deleted). Some resources
+still have the generated names CloudFormation gave them; `existing.auto.tfvars` pins those
+names so Terraform keeps them. Don't delete it.
 
 ## Brand-new install (someone else's copy)
 
-Set `github_repo` in `infra/terraform/variables.tf`, run the bootstrap in your account, put its
-three values in `deploy.env`, delete `existing.auto.tfvars` if present, and run the workflow once
-with the repository variable `ALLOW_FRESH_INSTALL` set to `true`. Then
-copy `terraform output` into `deploy.env`.
+1. Set `github_repo` in `infra/terraform/variables.tf` and delete `existing.auto.tfvars`.
+2. **Bootstrap** (AWS console, region London, CloudShell, about 2 minutes):
+   ```bash
+   git clone https://github.com/<you>/cosmos-notebook && bash cosmos-notebook/infra/bootstrap/bootstrap.sh
+   ```
+   Put the three values it prints in `deploy.env`.
+3. **Protect production:** Repo → Settings → Environments → `production` → **Required
+   reviewers** → add yourself.
+4. Set the repository variable `ALLOW_FRESH_INSTALL` to `true`, then Actions → *Infrastructure
+   (Terraform)* → Run workflow, and approve the apply. Delete the variable afterwards.
+5. Copy `terraform output` (shown in the apply's run summary) into `deploy.env`, and push.
 
 ## Custom domain
 

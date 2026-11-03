@@ -58,9 +58,9 @@ variable "tracker_dsn_schedule" {
 }
 
 # ---------------------------------------------------------------------------------------
-# Names of resources that CloudFormation created with generated names. They are filled in
-# by infra/terraform/scripts/discover.sh (existing.auto.tfvars) so Terraform adopts the
-# live resources instead of creating new ones. Leave them null on a brand-new install.
+# Names of resources first created (by CloudFormation) with generated names. They are set in
+# existing.auto.tfvars so Terraform keeps the live resources instead of replacing them.
+# Leave them null on a brand-new install.
 
 variable "site_bucket_name" {
   description = "Existing website bucket name, or null to generate one."

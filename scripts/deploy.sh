@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Deploy from your own computer instead of GitHub Actions.
 # Needs the AWS CLI, signed in (aws configure / aws sso login), and the values from
-# your CloudFormation stack's Outputs tab:
+# deploy.env (or `terraform output` in infra/terraform):
 #
 #   export AWS_REGION=eu-west-2 S3_BUCKET=... CLOUDFRONT_DISTRIBUTION_ID=... \
 #          API_FUNCTION_NAME=... COGNITO_CLIENT_ID=... SITE_URL=https://...
 #   ./scripts/deploy.sh
 set -euo pipefail
 for v in AWS_REGION S3_BUCKET CLOUDFRONT_DISTRIBUTION_ID API_FUNCTION_NAME COGNITO_CLIENT_ID; do
-  [ -n "${!v:-}" ] || { echo "Please set $v (see the CloudFormation Outputs tab)"; exit 1; }
+  [ -n "${!v:-}" ] || { echo "Please set $v (see deploy.env)"; exit 1; }
 done
 
 cd "$(dirname "$0")/.."

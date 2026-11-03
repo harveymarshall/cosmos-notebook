@@ -63,40 +63,34 @@ AWS console → **Billing → Budgets → Create budget → Zero spend budget**,
 ### Step B — Put the code on GitHub
 Create a free [GitHub](https://github.com) account and a new repository, and upload this folder, including the hidden `.github` folder.
 
-### Step C — Create everything with one template
-
-> **Infrastructure is moving to Terraform.** The site's AWS setup now lives in `infra/terraform` and is applied by GitHub Actions — see [infra/README.md](infra/README.md). The CloudFormation steps below describe how the site was first created and will be removed once the migration is finished.
-
-1. AWS console, region **Europe (London) eu-west-2** (top right).
-2. **CloudFormation → Create stack → With new resources → Upload a template file** → choose `infra/cloudformation.yaml`.
-3. Stack name `cosmos-notebook`. For **GitHubRepo** enter `your-github-name/your-repo`. Leave the rest.
-4. Tick the IAM acknowledgement and **Submit**. Wait 5–10 minutes for `CREATE_COMPLETE`.
-5. Keep the **Outputs** tab open.
-
-> Already deployed the earlier blog version? Choose **Update stack → Replace existing template** on the same stack instead.
->
-> If the stack fails because the GitHub identity provider already exists, recreate it with **CreateGitHubOIDCProvider** = `false`.
+### Step C — Create everything with Terraform
+The site's AWS setup lives in `infra/terraform` and is applied only by GitHub Actions. Follow
+**Brand-new install** in [infra/README.md](infra/README.md): a two-minute bootstrap in AWS
+CloudShell (region **Europe (London) eu-west-2**), a `production` environment in GitHub with
+you as reviewer, then one run of the *Infrastructure (Terraform)* workflow.
 
 ### Step D — Switch CloudFront to the Free plan
 **CloudFront → Distributions** → your distribution → choose the **Free** pricing plan.
 
 ### Step E — Connect GitHub to AWS
-GitHub repo → **Settings → Secrets and variables → Actions → Variables**. Add these from your stack's Outputs:
+Put the values from `terraform output` (shown in the apply's run summary) in `deploy.env`:
 
-| Variable | Value |
+| Setting | `terraform output` |
 | --- | --- |
-| `AWS_REGION` | `Region` output (e.g. `eu-west-2`) |
-| `AWS_ROLE_ARN` | `DeployRoleArn` |
-| `S3_BUCKET` | `BucketName` |
-| `CLOUDFRONT_DISTRIBUTION_ID` | `DistributionId` |
-| `API_FUNCTION_NAME` | `ApiFunctionName` |
-| `COGNITO_CLIENT_ID` | `UserPoolClientId` |
-| `SITE_URL` | `SiteURL` |
+| `AWS_REGION` | `region` (e.g. `eu-west-2`) |
+| `AWS_ROLE_ARN` | `aws_role_arn` |
+| `S3_BUCKET` | `s3_bucket` |
+| `CLOUDFRONT_DISTRIBUTION_ID` | `cloudfront_distribution_id` |
+| `API_FUNCTION_NAME` | `api_function_name` |
+| `COGNITO_CLIENT_ID` | `cognito_client_id` |
+| `SITE_URL` | `site_url` |
+
+GitHub repository variables with the same names take priority over `deploy.env`.
 
 No passwords or keys are stored. GitHub proves its identity to AWS, and the role can only update this one site.
 
 ### Step F — Deploy
-**Actions** tab → **Deploy to AWS** → **Run workflow**. It runs the tests, uploads the API and the website, and refreshes the cache. Open your `SiteURL` and sign up.
+**Actions** tab → **Deploy to AWS** → **Run workflow**. It runs the tests, uploads the API and the website, and refreshes the cache. Open your `SITE_URL` and sign up.
 
 From now on, **every push to GitHub deploys automatically.**
 
@@ -124,7 +118,7 @@ Leave **GitHubRepo** blank, install the [AWS CLI](https://aws.amazon.com/cli/), 
 - **Moderation:** admins see a **Remove post** button on every community post and can delete any comment. Post authors can delete comments on their own posts.
 - **What's public:** only what members choose to share — the write-up, their display name, and (for observing nights) the date, target, equipment and conditions. Email addresses and observing locations are never shown.
 - **Limits:** each member can have up to 5 suggestions waiting for review. Notes are capped at 20,000 characters and comments at 2,000.
-- **Backups:** the database has point-in-time recovery switched on, and the database, user pool and website bucket are kept even if the stack is deleted.
+- **Backups:** the database has point-in-time recovery switched on, and Terraform can't delete the database, user pool or website bucket (`prevent_destroy`, AWS deletion protection, and an explicit deny on the Terraform role).
 
 ---
 
@@ -173,7 +167,7 @@ api/test/           API tests (node --test)
 test/               astronomy and chart tests
 build.js            builds the website into dist/
 scripts/            dev-server.js (local everything), deploy.sh, new.js
-infra/              the CloudFormation template
+infra/              Terraform (the whole AWS setup) and its one-time bootstrap
 .github/workflows/  test + deploy on every push
 ```
 
