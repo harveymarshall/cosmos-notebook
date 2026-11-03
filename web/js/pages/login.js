@@ -58,7 +58,8 @@ const VIEWS = {
             return show('confirm');
           }
           if (err.code === 'PasswordResetRequiredException') {
-            toast('Your password was reset by the site team. Check your email for a code, then choose a new password.');
+            await forgotPassword(email);
+            toast('Your password was reset by the site team. We\'ve emailed you a new code: enter it below with a new password.');
             return show('reset');
           }
           throw err;
