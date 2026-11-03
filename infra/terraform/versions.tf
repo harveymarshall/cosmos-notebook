@@ -1,5 +1,5 @@
 # Cosmos Notebook infrastructure, managed by Terraform and applied only from GitHub Actions
-# (.github/workflows/infra.yml). Replaces infra/cloudformation.yaml.
+# (.github/workflows/infra.yml).
 
 terraform {
   required_version = ">= 1.10" # S3 native state locking (use_lockfile)
