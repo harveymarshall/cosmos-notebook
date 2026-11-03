@@ -107,6 +107,16 @@ Or with the AWS CLI:
 aws cognito-idp admin-add-user-to-group --user-pool-id <UserPoolId> --username you@example.com --group-name admins
 ```
 
+### Managing members
+
+The admin console (`/admin/`, only visible to the `admins` group) has three tabs:
+
+- **Dashboard** — member and activity counts, recent admin actions, and *Rebuild member index* (run once after upgrading).
+- **Members** — search by email, open a member to see their posts and comments, suspend or unsuspend them (suspending hides their posts and comments), send a password reset, make or remove admins (owner only), or delete the account and all its data.
+- **Suggestions** — the library review queue.
+
+The owner account is set by `owner_sub` in `infra/terraform/existing.auto.tfvars` and can't be suspended, deleted or demoted from the console. Every action is kept in the audit log.
+
 ### Deploy from your computer instead
 Leave **GitHubRepo** blank, install the [AWS CLI](https://aws.amazon.com/cli/), sign in, set the variables from the table above (`export AWS_REGION=...` etc.), then run `./scripts/deploy.sh`.
 

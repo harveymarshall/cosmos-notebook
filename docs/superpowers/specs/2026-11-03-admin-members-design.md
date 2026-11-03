@@ -51,7 +51,7 @@ and see site stats. Email and newsletters are a separate later project (Project 
 
 | Item | New keys |
 | --- | --- |
-| `USER#<sub> / PROFILE` | `GSI1PK = MEMBERS`, `GSI1SK = <lastSeenAt>#<sub>`; fields `lastSeenAt`, `suspended` |
+| `USER#<sub> / ACCOUNT` (new) | `GSI1PK = MEMBERS`, `GSI1SK = <lastSeenAt>#<sub>`; fields `lastSeenAt`, `suspended`, `suspendedAt` (separate from PROFILE, which `PUT /api/me/profile` rewrites whole) |
 | `POST#<id> / META` | `GSI2PK = USER#<authorSub>`, `GSI2SK = POST#<publishedAt>#<id>` |
 | `POST#<id> / CMT#…` | `GSI2PK = USER#<authorSub>`, `GSI2SK = CMT#<createdAt>#<postId>#<cid>`; field `hidden` |
 | `POST#<id> / LIKE#<sub>` | `GSI2PK = USER#<sub>`, `GSI2SK = LIKE#<at>#<postId>` |
@@ -65,7 +65,7 @@ Suspended posts move out of the feed by changing `GSI1PK` from `FEED` to `FEED#H
 `listComments` and excluded from `commentCount` display.
 
 **Last active:** `GET /api/me` (called on every page load when signed in) updates
-`lastSeenAt` if the stored value is from an earlier UTC day — at most one write per member
+`lastSeenAt` on the ACCOUNT item if the stored value is from an earlier UTC day — at most one write per member
 per day.
 
 **Rebuild index** (one-off, idempotent): walks the feed (`GSI1 FEED` and `FEED#HIDDEN`), and
