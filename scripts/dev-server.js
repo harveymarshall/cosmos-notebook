@@ -225,6 +225,18 @@ createServer(async (req, res) => {
       return res.end(out.body);
     }
 
+    // Mission Control's live data: fetch it with `npm run live` (saved in .dev-data/live/)
+    if (url.pathname.startsWith('/live/')) {
+      const name = url.pathname.slice('/live/'.length);
+      const live = /^[a-z]+\.json$/.test(name) ? join(DATA, 'live', name) : null;
+      if (live && existsSync(live)) {
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+        return res.end(await readFile(live));
+      }
+      res.writeHead(404, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'No live data yet - run `npm run live`' }));
+    }
+
     const file = await staticFile(url.pathname);
     const target = file || join(DIST, '404.html');
     const content = await readFile(target);

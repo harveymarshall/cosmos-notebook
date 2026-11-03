@@ -14,7 +14,7 @@ done
 cd "$(dirname "$0")/.."
 # Stellar Lab engine (needs Rust: rustup target add wasm32-unknown-unknown)
 npm run --silent test:wasm >/dev/null && npm run --silent build:wasm
-node --test api/test/*.test.js test/*.test.js >/dev/null && echo "Tests passed"
+npm test --silent >/dev/null && echo "Tests passed"
 COGNITO_REGION="$AWS_REGION" REQUIRE_WASM=1 node build.js
 
 rm -f lambda.zip
@@ -23,11 +23,21 @@ aws lambda update-function-code --function-name "$API_FUNCTION_NAME" --zip-file 
 aws lambda wait function-updated --function-name "$API_FUNCTION_NAME"
 echo "API updated"
 
-aws s3 sync dist "s3://$S3_BUCKET" --delete \
+TRACKER_FUNCTION_NAME="${TRACKER_FUNCTION_NAME:-cosmos-notebook-tracker}"
+if aws lambda get-function --function-name "$TRACKER_FUNCTION_NAME" >/dev/null 2>&1; then
+  rm -f tracker.zip
+  (cd tracker && zip -qr ../tracker.zip index.mjs package.json src)
+  aws lambda update-function-code --function-name "$TRACKER_FUNCTION_NAME" --zip-file fileb://tracker.zip >/dev/null
+  aws lambda wait function-updated --function-name "$TRACKER_FUNCTION_NAME"
+  echo "Mission Control tracker updated"
+fi
+
+# live/ belongs to the Mission Control tracker: never overwrite or delete it
+aws s3 sync dist "s3://$S3_BUCKET" --delete --exclude "live/*" \
   --exclude "*.html" --exclude "*.xml" --exclude "*.txt" --exclude "*.json" --exclude "*.js" --exclude "*.css" \
   --cache-control "public,max-age=86400"
 aws s3 sync dist "s3://$S3_BUCKET" --delete \
-  --exclude "*" --include "*.html" --include "*.xml" --include "*.txt" --include "*.json" --include "*.js" --include "*.css" \
+  --exclude "*" --include "*.html" --include "*.xml" --include "*.txt" --include "*.json" --include "*.js" --include "*.css" --exclude "live/*" \
   --cache-control "public,max-age=60"
 aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" --paths "/*" >/dev/null
 

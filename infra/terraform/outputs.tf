@@ -20,6 +20,11 @@ output "api_function_name" {
   value       = aws_lambda_function.api.function_name
 }
 
+output "tracker_function_name" {
+  description = "TRACKER_FUNCTION_NAME - Mission Control's tracker"
+  value       = aws_lambda_function.tracker.function_name
+}
+
 output "user_pool_id" {
   description = "Where member accounts live - add admins here"
   value       = aws_cognito_user_pool.members.id

@@ -2,6 +2,7 @@ node_modules/
 dist/
 .dev-data/
 lambda.zip
+tracker.zip
 .DS_Store
 *.log
 sim/stellar/target/
