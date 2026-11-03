@@ -476,5 +476,113 @@ export function createStore({ send, table }) {
     async memberLikes(sub) {
       return (await byAuthor(sub, 'LIKE#')).map((i) => ({ postId: i.PK.slice(5), at: i.at }));
     },
+
+    /** Suspend/unsuspend: move a member's posts out of (or back into) the feed and hide
+     *  (or show) their comments, keeping each post's commentCount equal to what's visible. */
+    async setMemberHidden(sub, hidden) {
+      const feed = hidden ? 'FEED#HIDDEN' : 'FEED';
+      const posts = await byAuthor(sub, 'POST#');
+      for (const p of posts) {
+        await update({ PK: p.PK, SK: 'META' }, { GSI1PK: feed }, { ConditionExpression: 'attribute_exists(PK)' });
+      }
+      let comments = 0;
+      for (const c of await byAuthor(sub, 'CMT#')) {
+        if (!!c.hidden === hidden) continue;
+        try {
+          await send('TransactWrite', {
+            TransactItems: [
+              {
+                Update: {
+                  TableName: T,
+                  Key: { PK: c.PK, SK: c.SK },
+                  UpdateExpression: 'SET #h = :h',
+                  ExpressionAttributeNames: { '#h': 'hidden' },
+                  ExpressionAttributeValues: { ':h': hidden },
+                  ConditionExpression: 'attribute_exists(PK)',
+                },
+              },
+              {
+                Update: {
+                  TableName: T,
+                  Key: { PK: c.PK, SK: 'META' },
+                  UpdateExpression: 'ADD commentCount :n',
+                  ExpressionAttributeValues: { ':n': hidden ? -1 : 1 },
+                  ConditionExpression: 'attribute_exists(PK)',
+                },
+              },
+            ],
+          });
+          comments++;
+        } catch (err) {
+          if (err.name !== 'TransactionCanceledException') throw err; // comment or post already gone
+        }
+      }
+      return { posts: posts.length, comments };
+    },
+
+    /** Removes everything stored under USER#<sub>: profile, account, progress, paths, journal, observations. */
+    async deleteUserItems(sub) {
+      const items = await queryAll({ KeyConditionExpression: 'PK = :pk', ExpressionAttributeValues: { ':pk': `USER#${sub}` } }, 100000);
+      for (const group of chunk(items, 25)) {
+        let request = { [T]: group.map((i) => ({ DeleteRequest: { Key: { PK: i.PK, SK: i.SK } } })) };
+        for (let attempt = 0; attempt < 5 && request && Object.keys(request).length; attempt++) {
+          const res = await send('BatchWrite', { RequestItems: request });
+          request = res.UnprocessedItems;
+        }
+      }
+      return items.length;
+    },
+
+    async deleteSubmission(id) {
+      await del(`SUB#${id}`, 'META');
+    },
+    /** Approved suggestions stay in the library after their author leaves, without their name. */
+    async anonymiseSubmission(s) {
+      await this.putSubmission({ ...s, authorSub: 'deleted', authorName: 'A former member' });
+    },
+
+    // ---------- audit log ----------
+    async putAudit(entry) {
+      await put({ PK: 'AUDIT', SK: `${entry.at}#${entry.id}`, entity: 'audit', ...entry });
+    },
+    async listAudit({ limit = 50, targetSub } = {}) {
+      const items = await queryAll(
+        { KeyConditionExpression: 'PK = :pk', ExpressionAttributeValues: { ':pk': 'AUDIT' }, ScanIndexForward: false },
+        targetSub ? 2000 : limit
+      );
+      return items
+        .map(strip)
+        .filter((a) => !targetSub || a.targetSub === targetSub)
+        .slice(0, limit);
+    },
+
+    // ---------- one-off: rebuild the per-author index for items written before it existed ----------
+    async listAllPosts() {
+      const all = [];
+      for (const pk of ['FEED', 'FEED#HIDDEN']) {
+        all.push(
+          ...(await queryAll({ IndexName: 'GSI1', KeyConditionExpression: 'GSI1PK = :pk', ExpressionAttributeValues: { ':pk': pk } }, 100000)).map(strip)
+        );
+      }
+      return all;
+    },
+    async reindexPost(postId) {
+      const items = await queryAll({ KeyConditionExpression: 'PK = :pk', ExpressionAttributeValues: { ':pk': `POST#${postId}` } }, 100000);
+      const counts = { posts: 0, comments: 0, likes: 0 };
+      for (const i of items) {
+        const key = { PK: i.PK, SK: i.SK };
+        if (i.SK === 'META') {
+          await update(key, { GSI2PK: `USER#${i.authorSub}`, GSI2SK: `POST#${i.publishedAt}#${postId}` });
+          counts.posts++;
+        } else if (i.SK.startsWith('CMT#')) {
+          await update(key, { postId, GSI2PK: `USER#${i.authorSub}`, GSI2SK: `CMT#${i.createdAt}#${postId}#${i.SK.slice(4)}` });
+          counts.comments++;
+        } else if (i.SK.startsWith('LIKE#')) {
+          await update(key, { postId, GSI2PK: `USER#${i.sub}`, GSI2SK: `LIKE#${i.at}#${postId}` });
+          counts.likes++;
+        }
+      }
+      return counts;
+    },
   };
 }
