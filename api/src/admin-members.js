@@ -171,6 +171,8 @@ function registerActions({ route, admin, store, members, ownerSub, now, log, sub
   });
 
   // Each step is safe to repeat and the login goes last, so a failed delete can be re-run.
+  // A failure part-way is audited with the step reached, and reported as a 500 (502 for a
+  // Cognito failure) carrying { step, removed } so the caller knows what to re-run.
   route('DELETE', '/api/admin/members/:sub', admin, async ({ user, params, body }) => {
     const m = await findMember(subOf(params));
     protect(user, m);
@@ -178,31 +180,44 @@ function registerActions({ route, admin, store, members, ownerSub, now, log, sub
     if (confirm !== m.email.toLowerCase()) {
       throw new HttpError(400, "confirmEmail: doesn't match this member's email", { field: 'confirmEmail' });
     }
+    const reason = reasonOf(body);
     const removed = { posts: 0, comments: 0, likes: 0, submissions: 0, anonymised: 0, items: 0 };
-    for (const p of await store.memberPosts(m.sub)) {
-      await store.deletePost(p.postId);
-      removed.posts++;
-    }
-    for (const c of await store.memberComments(m.sub)) {
-      await store.deleteComment(c.postId, c.commentId);
-      removed.comments++;
-    }
-    for (const l of await store.memberLikes(m.sub)) {
-      await store.unlike(l.postId, m.sub);
-      removed.likes++;
-    }
-    for (const s of await store.listSubmissionsByUser(m.sub)) {
-      if (s.status === 'approved') {
-        await store.anonymiseSubmission(s);
-        removed.anonymised++;
-      } else {
-        await store.deleteSubmission(s.id);
-        removed.submissions++;
+    let step = 'posts';
+    try {
+      for (const p of await store.memberPosts(m.sub)) {
+        await store.deletePost(p.postId);
+        removed.posts++;
       }
+      step = 'comments';
+      for (const c of await store.memberComments(m.sub)) {
+        await store.deleteComment(c.postId, c.commentId);
+        removed.comments++;
+      }
+      step = 'likes';
+      for (const l of await store.memberLikes(m.sub)) {
+        await store.unlike(l.postId, m.sub);
+        removed.likes++;
+      }
+      step = 'submissions';
+      for (const s of await store.listSubmissionsByUser(m.sub)) {
+        if (s.status === 'approved') {
+          await store.anonymiseSubmission(s);
+          removed.anonymised++;
+        } else {
+          await store.deleteSubmission(s.id);
+          removed.submissions++;
+        }
+      }
+      step = 'user-items';
+      removed.items = await store.deleteUserItems(m.sub);
+      step = 'remove-login';
+      await members.remove(m.username);
+    } catch (err) {
+      if (!(err instanceof HttpError)) log.error?.(err);
+      await audit(user, 'delete', m.sub, { reason, detail: { partial: step, removed } });
+      throw new HttpError(err.status || 500, err.status ? err.message : 'Delete stopped part-way — run it again to finish', { step, removed });
     }
-    removed.items = await store.deleteUserItems(m.sub);
-    await members.remove(m.username);
-    await audit(user, 'delete', m.sub, { reason: reasonOf(body), detail: removed });
+    await audit(user, 'delete', m.sub, { reason, detail: removed });
     return { deleted: true, removed };
   });
 

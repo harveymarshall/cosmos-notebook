@@ -394,6 +394,29 @@ test('a delete that failed part-way can be run again', async () => {
   };
   const first = await call('DELETE', `/api/admin/members/${ALICE}`, { as: AS.owner, body: { confirmEmail: 'alice@example.com' } });
   assert.equal(first.status, 502);
+  assert.equal(first.data.step, 'remove-login');
+  const entry = (await call('GET', '/api/admin/audit', { as: AS.owner })).data.entries[0];
+  assert.equal(entry.action, 'delete');
+  assert.equal(entry.detail.partial, 'remove-login');
+  fail = false;
+  const second = await call('DELETE', `/api/admin/members/${ALICE}`, { as: AS.owner, body: { confirmEmail: 'alice@example.com' } });
+  assert.equal(second.status, 200);
+  assert.equal(cognito.users.has(ALICE), false);
+});
+
+test('a delete that fails on a store step is reported with that step, and can be re-run', async () => {
+  const { call, store, cognito, seed } = setupApp();
+  await seed();
+  const realDeleteUserItems = store.deleteUserItems.bind(store);
+  let fail = true;
+  store.deleteUserItems = async (sub) => {
+    if (fail) throw new Error('dynamo down');
+    return realDeleteUserItems(sub);
+  };
+  const first = await call('DELETE', `/api/admin/members/${ALICE}`, { as: AS.owner, body: { confirmEmail: 'alice@example.com' } });
+  assert.equal(first.status, 500);
+  assert.equal(first.data.step, 'user-items');
+  assert.equal(first.data.error, 'Delete stopped part-way — run it again to finish');
   fail = false;
   const second = await call('DELETE', `/api/admin/members/${ALICE}`, { as: AS.owner, body: { confirmEmail: 'alice@example.com' } });
   assert.equal(second.status, 200);
