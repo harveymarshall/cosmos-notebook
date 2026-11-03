@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history, so the sitemap can say when each page last changed
 
       - uses: actions/setup-node@v4
         with:
