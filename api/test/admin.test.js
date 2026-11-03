@@ -196,3 +196,77 @@ test('a suspended member cannot write, but can still read', async () => {
   assert.equal(r.data.error, 'Your account is suspended');
   assert.equal((await call('GET', '/api/me', { as: AS.alice })).status, 200);
 });
+
+test('admin routes are invisible to members and need a login', async () => {
+  const { call } = setupApp();
+  for (const [method, path] of [
+    ['GET', '/api/admin/stats'],
+    ['GET', '/api/admin/audit'],
+    ['GET', '/api/admin/members'],
+    ['GET', `/api/admin/members/${BOB}`],
+    ['DELETE', `/api/admin/comments/experiment~${BOB}~x/20261103090000000-id000001`],
+  ]) {
+    assert.equal((await call(method, path)).status, 401, `${method} ${path} signed out`);
+    assert.equal((await call(method, path, { as: AS.alice, body: {} })).status, 404, `${method} ${path} as member`);
+  }
+});
+
+test('stats and the member list', async () => {
+  const { call, seed } = setupApp();
+  await seed();
+  await call('GET', '/api/me', { as: AS.alice });
+  const stats = (await call('GET', '/api/admin/stats', { as: AS.owner })).data;
+  assert.deepEqual(stats, {
+    members: 3,
+    newLast7Days: 1,
+    newLast30Days: 1,
+    activeLast7Days: 1,
+    activeLast30Days: 1,
+    posts: 2,
+    comments: 1,
+    pendingSuggestions: 0,
+  });
+
+  const list = (await call('GET', '/api/admin/members', { as: AS.owner })).data;
+  assert.deepEqual(
+    list.members.map((m) => [m.email, m.displayName, m.isAdmin, m.isOwner, m.suspended]),
+    [
+      ['alice@example.com', 'Alice', false, false, false],
+      ['bob@example.com', 'Bob', false, false, false],
+      ['owner@example.com', '', true, true, false],
+    ]
+  );
+  assert.ok(list.members.find((m) => m.sub === ALICE).lastSeenAt);
+  assert.equal(list.members[0].username, undefined, 'internal Cognito username is not sent');
+  assert.equal(list.members[0].isOwner, false);
+  assert.deepEqual((await call('GET', '/api/admin/members?q=ALI', { as: AS.owner })).data.members.map((m) => m.sub), [ALICE]);
+});
+
+test('member page shows counts, posts, comments and history', async () => {
+  const { call, seed } = setupApp();
+  const { bobPost } = await seed();
+  const r = await call('GET', `/api/admin/members/${ALICE}`, { as: AS.owner });
+  assert.equal(r.status, 200);
+  const m = r.data.member;
+  assert.equal(m.email, 'alice@example.com');
+  assert.equal(m.displayName, 'Alice');
+  assert.deepEqual(r.data.counts, { experimentsDone: 1, observations: 0, posts: 1, comments: 1, likes: 1 });
+  assert.equal(r.data.posts[0].itemId, 'weigh-jupiter');
+  assert.equal(r.data.comments[0].postId, bobPost);
+  assert.deepEqual(r.data.history, []);
+  assert.equal((await call('GET', '/api/admin/members/not-a-sub', { as: AS.owner })).status, 400);
+  assert.equal((await call('GET', '/api/admin/members/44444444-dddd-4ddd-8ddd-444444444444', { as: AS.owner })).status, 404);
+});
+
+test('admin can remove any comment, and it is logged', async () => {
+  const { call, seed } = setupApp();
+  const { bobPost } = await seed();
+  const { comments } = (await call('GET', `/api/admin/members/${ALICE}`, { as: AS.owner })).data;
+  const r = await call('DELETE', `/api/admin/comments/${bobPost}/${comments[0].commentId}`, { as: AS.owner, body: { reason: 'spam' } });
+  assert.equal(r.status, 200);
+  assert.equal((await call('GET', `/api/posts/${bobPost}/comments`)).data.comments.length, 0);
+  const audit = (await call('GET', '/api/admin/audit', { as: AS.owner })).data.entries;
+  assert.equal(audit[0].action, 'remove-comment');
+  assert.equal(audit[0].targetSub, ALICE);
+  assert.equal(audit[0].reason, 'spam');
+});
