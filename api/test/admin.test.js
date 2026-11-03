@@ -2,6 +2,10 @@
 // Run with:  node --test api/test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { createStore } from '../src/store.js';
 import { createFakeDynamo } from '../src/fake-dynamo.js';
 import { createApp } from '../src/app.js';
@@ -430,4 +434,17 @@ test('reindex is idempotent and admin-only', async () => {
   assert.equal(a.status, 200);
   assert.deepEqual(a.data, { posts: 2, comments: 1, likes: 1 });
   assert.deepEqual((await call('POST', '/api/admin/maintenance/reindex', { as: AS.owner, body: {} })).data, a.data);
+});
+
+test('admin console bundle is one valid module, only for admins', async () => {
+  const { call } = setupApp();
+  assert.equal((await call('GET', '/api/admin/console', { as: AS.alice })).status, 404);
+  const { code } = (await call('GET', '/api/admin/console', { as: AS.owner })).data;
+  assert.equal((code.match(/^import /gm) || []).length, 2, 'only imports.js imports');
+  for (const name of ['renderDashboard', 'renderMembers', 'renderMember', 'renderSuggestions', 'route']) {
+    assert.match(code, new RegExp(`function ${name}\\(`));
+  }
+  const file = join(mkdtempSync(join(tmpdir(), 'console-')), 'console.mjs');
+  writeFileSync(file, code);
+  execFileSync(process.execPath, ['--check', file]); // throws on a syntax error
 });

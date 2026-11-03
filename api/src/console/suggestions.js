@@ -1,12 +1,5 @@
-// The admin console. This file is NOT part of the public website: the API sends it only
-// to signed-in members of the Cognito "admins" group (GET /api/admin/console), and
-// web/js/admin-loader.js runs it. Imports use site-absolute paths; the loader turns
-// them into full URLs.
-import { render, $, $$, esc, requireLogin, showError, busy, toast, kindTag, fmtDate, renderMarkdown, params } from '/js/ui.js';
-import { get, post } from '/js/api.js';
-
-const session = requireLogin();
-const TABS = [
+// ---------- suggestions (review queue) ----------
+const STATUS_TABS = [
   ['pending', 'Waiting'],
   ['approved', 'Approved'],
   ['rejected', 'Not accepted'],
@@ -37,12 +30,13 @@ const card = (s, status) => `<article class="review card-form" data-id="${esc(s.
   </form>
 </article>`;
 
-async function main() {
-  const status = params().get('status') || 'pending';
+async function renderSuggestions() {
+  const status = new URLSearchParams(location.hash.split('?')[1] || '').get('status') || 'pending';
   const { submissions } = await get(`/admin/submissions?status=${status}`);
   render(`
 <header class="page-head"><h1>Review queue</h1><p class="lede">Check each suggestion is safe, accurate and useful before it joins the library. You can edit before approving.</p></header>
-<nav class="filters">${TABS.map(([k, label]) => `<a class="chip" aria-pressed="${k === status}" href="?status=${k}">${label}</a>`).join('')}</nav>
+${tabs('suggestions')}
+<nav class="filters">${STATUS_TABS.map(([k, label]) => `<a class="chip" aria-pressed="${k === status}" href="#suggestions?status=${k}">${label}</a>`).join('')}</nav>
 ${submissions.length ? submissions.map((s) => card(s, status)).join('') : `<p class="muted">Nothing here${status === 'pending' ? ' — the queue is clear' : ''}.</p>`}`);
 
   $$('[data-preview]').forEach((pv) => {
@@ -65,10 +59,8 @@ ${submissions.length ? submissions.map((s) => card(s, status)).join('') : `<p cl
           edits: { title: form.title.value, summary: form.summary.value, track: form.track.value, link: form.link.value, body: form.body.value },
         });
         toast(decision === 'approve' ? 'Published to the library' : 'Marked as not accepted');
-        main();
+        renderSuggestions();
       }).catch(() => {});
     });
   });
 }
-
-if (session) main().catch(showError);

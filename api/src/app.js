@@ -416,9 +416,11 @@ export function createApp({ store, members, ownerSub = '', now = () => new Date(
   }, 201);
 
   // ---------- admin ----------
+  // The console is several files joined into one module; only imports.js has import lines.
+  const CONSOLE_FILES = ['imports.js', 'shared.js', 'dashboard.js', 'members.js', 'member.js', 'suggestions.js', 'main.js'];
   route('GET', '/api/admin/console', { auth: true }, async ({ user }) => {
     canSeeAdmin(user);
-    consoleCode ??= readFileSync(new URL('./console/admin.js', import.meta.url), 'utf8');
+    consoleCode ??= CONSOLE_FILES.map((f) => readFileSync(new URL(`./console/${f}`, import.meta.url), 'utf8')).join('\n');
     return { code: consoleCode };
   });
 
