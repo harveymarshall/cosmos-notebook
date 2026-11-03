@@ -22,15 +22,18 @@ fi
 
 count_retain() { grep -c '^    DeletionPolicy: Retain' "$1" || true; }
 count_resources() { grep -c '^    Type: AWS::' "$1" || true; }
+# Trailing spaces and blank lines at the very end don't count (`aws ... --output text` adds a
+# final newline); every other difference still stops the script.
+normalise() { awk '{ sub(/[[:space:]]+$/, ""); l[NR] = $0 } END { n = NR; while (n > 0 && l[n] == "") n--; for (i = 1; i <= n; i++) print l[i] }' "$1"; }
 
 aws cloudformation get-template --region "$REGION" --stack-name "$STACK" --template-stage Original \
   --query TemplateBody --output text >"$LIVE"
 
 if [ "$(count_retain "$LIVE")" != "$(count_resources "$LIVE")" ]; then
   echo "1/4 Checking the live stack matches infra/cloudformation.yaml"
-  if ! diff -q <(sed 's/[[:space:]]*$//' "$LIVE") <(sed 's/[[:space:]]*$//' "$ROOT/infra/cloudformation.yaml") >/dev/null; then
+  if ! diff -q <(normalise "$LIVE") <(normalise "$ROOT/infra/cloudformation.yaml") >/dev/null; then
     echo "::error::The live stack's template differs from infra/cloudformation.yaml. Stopping so nothing unexpected changes:"
-    diff <(sed 's/[[:space:]]*$//' "$LIVE") <(sed 's/[[:space:]]*$//' "$ROOT/infra/cloudformation.yaml") || true
+    diff <(normalise "$LIVE") <(normalise "$ROOT/infra/cloudformation.yaml") || true
     exit 1
   fi
 
