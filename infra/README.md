@@ -70,4 +70,5 @@ The domain is registered at Cloudflare, which also runs its DNS; CloudFront serv
 3. Once that apply has finished, change `SITE_URL` in `deploy.env` to `https://yourdomain.com`
    so the next deploy builds links and the sitemap with the new address.
 
-The old `*.cloudfront.net` address keeps working.
+The old `*.cloudfront.net` address redirects to the domain (301), as does `www.`. The API
+(`/api/*`) answers on both, since the redirect only applies to pages.

@@ -1,10 +1,12 @@
 // Used instead of index-rewrite.js once a custom domain is set (CloudFront allows one
-// viewer-request function per behaviour). Same folder-URL rewrite, plus a www redirect.
+// viewer-request function per behaviour). Same folder-URL rewrite, plus a permanent redirect
+// to the bare domain from any other address (www. and the old *.cloudfront.net one), so
+// search engines see one copy of the site.
 function handler(event) {
   var request = event.request;
   var host = request.headers.host ? request.headers.host.value : '';
 
-  if (host === 'www.${domain}') {
+  if (host !== '${domain}') {
     var qs = [];
     for (var key in request.querystring) {
       var q = request.querystring[key];

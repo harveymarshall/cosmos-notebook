@@ -221,6 +221,22 @@ function socialMeta({ title, desc, canonical, ogType }) {
   ].join('\n');
 }
 
+/** schema.org WebApplication for the in-browser tools (Stellar Lab, Mission Control). */
+const webApp = ({ name, path, description, about, browserRequirements }) => ({
+  '@type': 'WebApplication',
+  name,
+  url: absUrl(path),
+  description,
+  applicationCategory: 'EducationalApplication',
+  operatingSystem: 'Any (runs in a web browser)',
+  browserRequirements,
+  isAccessibleForFree: true,
+  offers: { '@type': 'Offer', price: 0, priceCurrency: 'GBP' },
+  about: about.map((name) => ({ '@type': 'Thing', name })),
+  inLanguage: site.language || 'en-GB',
+  publisher: ORG,
+});
+
 /** schema.org JSON-LD: the page's own items plus a breadcrumb trail. */
 function structuredData(items, crumbs) {
   const graph = [...items];
@@ -681,6 +697,16 @@ await write(
     wide: true,
     script: 'lab',
     hasMath: labNotes.hasMath,
+    crumbs: [['Stellar Lab', '/lab/']],
+    jsonLd: [
+      webApp({
+        name: 'Stellar Lab',
+        path: '/lab/',
+        description: 'Set the mass of a star and watch its whole life — red giants, supernovae, neutron stars and black holes — simulated in your browser.',
+        about: ['Stellar evolution', 'Astrophysics'],
+        browserRequirements: 'Requires JavaScript and WebAssembly',
+      }),
+    ],
     body: `<header class="page-head">
   <p class="eyebrow">Lab · Simulator</p>
   <h1>Stellar Lab</h1>
@@ -704,6 +730,16 @@ await write(
     wide: true,
     script: 'missions',
     hasMath: missionNotes.hasMath,
+    crumbs: [['Mission Control', '/missions/']],
+    jsonLd: [
+      webApp({
+        name: 'Mission Control',
+        path: '/missions/',
+        description: 'Follow the spacecraft exploring the Solar System right now — live positions, how long their signals take to reach us, which dishes are listening, and the latest news.',
+        about: ['Space exploration', 'Deep Space Network'],
+        browserRequirements: 'Requires JavaScript',
+      }),
+    ],
     body: `<header class="page-head">
   <p class="eyebrow">Live · Deep space</p>
   <h1>Mission Control</h1>
