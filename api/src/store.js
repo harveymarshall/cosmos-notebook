@@ -5,14 +5,17 @@
 //
 // Single-table layout (PK / SK, plus two indexes):
 //   USER#<sub>   PROFILE                profile
+//   USER#<sub>   ACCOUNT                last seen, suspended (GSI1: MEMBERS / <lastSeenAt>#<sub>)
 //   USER#<sub>   PROG#<itemId>          progress on a library item
 //   USER#<sub>   PATH#<pathId>          enrolment on a learning path (pace, skipped steps, checkpoints)
 //   USER#<sub>   OBS#<id>               observing log entry
-//   POST#<id>    META                   published write-up   (GSI1: FEED / <publishedAt>#<id>)
-//   POST#<id>    LIKE#<sub>             a like
-//   POST#<id>    CMT#<createdAt>#<cid>  a comment
+//   POST#<id>    META                   published write-up   (GSI1: FEED or FEED#HIDDEN / <publishedAt>#<id>,
+//                                                             GSI2: USER#<author> / POST#<publishedAt>#<id>)
+//   POST#<id>    LIKE#<sub>             a like               (GSI2: USER#<sub> / LIKE#<at>#<postId>)
+//   POST#<id>    CMT#<createdAt>#<cid>  a comment            (GSI2: USER#<author> / CMT#<createdAt>#<postId>#<cid>)
 //   SUB#<id>     META                   library submission   (GSI1: SUBSTATUS#<status> / <createdAt>,
 //                                                             GSI2: USER#<sub> / SUB#<createdAt>)
+//   AUDIT        <at>#<id>              admin action log
 
 const strip = (item) => {
   if (!item) return item;
@@ -57,6 +60,42 @@ export function createStore({ send, table }) {
   const get = async (PK, SK) => (await send('Get', { TableName: T, Key: { PK, SK } })).Item;
   const put = (Item, extra = {}) => send('Put', { TableName: T, Item, ...extra });
   const del = (PK, SK) => send('Delete', { TableName: T, Key: { PK, SK } });
+
+  const update = (Key, fields, extra = {}) =>
+    send('Update', {
+      TableName: T,
+      Key,
+      UpdateExpression: `SET ${Object.keys(fields).map((f, i) => `#f${i} = :v${i}`).join(', ')}`,
+      ExpressionAttributeNames: Object.fromEntries(Object.keys(fields).map((f, i) => [`#f${i}`, f])),
+      ExpressionAttributeValues: Object.fromEntries(Object.values(fields).map((v, i) => [`:v${i}`, v])),
+      ...extra,
+    });
+
+  async function batchGet(keys) {
+    const items = [];
+    for (const group of chunk(keys, 100)) {
+      let request = group;
+      for (let attempt = 0; attempt < 5 && request && request.length; attempt++) {
+        const res = await send('BatchGet', { RequestItems: { [T]: { Keys: request } } });
+        items.push(...(res.Responses?.[T] || []));
+        request = res.UnprocessedKeys?.[T]?.Keys;
+      }
+    }
+    return items;
+  }
+
+  const byAuthor = (sub, prefix) =>
+    queryAll(
+      {
+        IndexName: 'GSI2',
+        KeyConditionExpression: 'GSI2PK = :pk AND begins_with(GSI2SK, :sk)',
+        ExpressionAttributeValues: { ':pk': `USER#${sub}`, ':sk': prefix },
+        ScanIndexForward: false,
+      },
+      5000
+    );
+
+  const bySub = (items) => Object.fromEntries(items.map((i) => [i.PK.slice(5), strip(i)]));
 
   return {
     // ---------- profiles ----------
@@ -153,6 +192,8 @@ export function createStore({ send, table }) {
             commentCount: 0,
             GSI1PK: 'FEED',
             GSI1SK: `${post.publishedAt}#${post.postId}`,
+            GSI2PK: `USER#${post.authorSub}`,
+            GSI2SK: `POST#${post.publishedAt}#${post.postId}`,
           },
           { ConditionExpression: 'attribute_not_exists(PK)' }
         );
@@ -212,7 +253,7 @@ export function createStore({ send, table }) {
             {
               Put: {
                 TableName: T,
-                Item: { PK: `POST#${postId}`, SK: `LIKE#${sub}`, entity: 'like', sub, at },
+                Item: { PK: `POST#${postId}`, SK: `LIKE#${sub}`, entity: 'like', sub, at, postId, GSI2PK: `USER#${sub}`, GSI2SK: `LIKE#${at}#${postId}` },
                 ConditionExpression: 'attribute_not_exists(PK)',
               },
             },
@@ -280,12 +321,12 @@ export function createStore({ send, table }) {
     },
 
     // ---------- comments ----------
-    async listComments(postId) {
+    async listComments(postId, { includeHidden = false } = {}) {
       const items = await queryAll({
         KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
         ExpressionAttributeValues: { ':pk': `POST#${postId}`, ':sk': 'CMT#' },
       });
-      return items.map((i) => ({ ...strip(i), commentId: i.SK.slice(4) }));
+      return items.filter((i) => includeHidden || !i.hidden).map((i) => ({ ...strip(i), commentId: i.SK.slice(4) }));
     },
 
     async addComment(postId, comment) {
@@ -293,7 +334,20 @@ export function createStore({ send, table }) {
       try {
         await send('TransactWrite', {
           TransactItems: [
-            { Put: { TableName: T, Item: { PK: `POST#${postId}`, SK: `CMT#${commentId}`, entity: 'comment', ...comment } } },
+            {
+              Put: {
+                TableName: T,
+                Item: {
+                  PK: `POST#${postId}`,
+                  SK: `CMT#${commentId}`,
+                  entity: 'comment',
+                  ...comment,
+                  postId,
+                  GSI2PK: `USER#${comment.authorSub}`,
+                  GSI2SK: `CMT#${comment.createdAt}#${postId}#${commentId}`,
+                },
+              },
+            },
             {
               Update: {
                 TableName: T,
@@ -384,6 +438,43 @@ export function createStore({ send, table }) {
           ScanIndexForward: false,
         })
       ).map(strip);
+    },
+
+    // ---------- accounts (last seen, suspended) ----------
+    async getAccount(sub) {
+      return strip(await get(`USER#${sub}`, 'ACCOUNT'));
+    },
+    async touchAccount(sub, at) {
+      await update({ PK: `USER#${sub}`, SK: 'ACCOUNT' }, { entity: 'account', sub, lastSeenAt: at, GSI1PK: 'MEMBERS', GSI1SK: `${at}#${sub}` });
+    },
+    async setSuspended(sub, suspended, at) {
+      await update({ PK: `USER#${sub}`, SK: 'ACCOUNT' }, { entity: 'account', sub, suspended, suspendedAt: suspended ? at : null });
+    },
+    /** Accounts that have been seen, most recent first. */
+    async listAccounts() {
+      return (
+        await queryAll(
+          { IndexName: 'GSI1', KeyConditionExpression: 'GSI1PK = :pk', ExpressionAttributeValues: { ':pk': 'MEMBERS' }, ScanIndexForward: false },
+          10000
+        )
+      ).map(strip);
+    },
+    async getAccounts(subs) {
+      return bySub(await batchGet(subs.map((s) => ({ PK: `USER#${s}`, SK: 'ACCOUNT' }))));
+    },
+    async getProfiles(subs) {
+      return bySub(await batchGet(subs.map((s) => ({ PK: `USER#${s}`, SK: 'PROFILE' }))));
+    },
+
+    // ---------- one member's community activity (GSI2) ----------
+    async memberPosts(sub) {
+      return (await byAuthor(sub, 'POST#')).map(strip);
+    },
+    async memberComments(sub) {
+      return (await byAuthor(sub, 'CMT#')).map((i) => ({ ...strip(i), postId: i.PK.slice(5), commentId: i.SK.slice(4) }));
+    },
+    async memberLikes(sub) {
+      return (await byAuthor(sub, 'LIKE#')).map((i) => ({ postId: i.PK.slice(5), at: i.at }));
     },
   };
 }
