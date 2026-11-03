@@ -4,6 +4,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createStore } from '../src/store.js';
 import { createFakeDynamo } from '../src/fake-dynamo.js';
+import { createApp } from '../src/app.js';
+import { createFakeCognito } from '../src/fake-cognito.js';
+import { createMembers } from '../src/members.js';
 
 const ALICE = '11111111-aaaa-4aaa-8aaa-111111111111';
 const BOB = '22222222-bbbb-4bbb-8bbb-222222222222';
@@ -119,4 +122,77 @@ test('store: reindex adds author keys to items written before them, and is idemp
   assert.equal((await store.memberPosts(BOB)).length, 1);
   assert.equal((await store.memberComments(ALICE)).length, 1);
   assert.equal((await store.memberLikes(ALICE)).length, 1);
+});
+
+const OWNER = '33333333-cccc-4ccc-8ccc-333333333333';
+const AS = {
+  alice: { sub: ALICE },
+  bob: { sub: BOB },
+  owner: { sub: OWNER, groups: '[admins]' },
+};
+
+function setupApp() {
+  let t = Date.parse('2026-11-03T09:00:00Z');
+  let n = 0;
+  const cognito = createFakeCognito();
+  cognito.addUser({ sub: ALICE, email: 'alice@example.com', createdAt: '2026-10-30T10:00:00.000Z' });
+  cognito.addUser({ sub: BOB, email: 'bob@example.com', createdAt: '2026-09-01T10:00:00.000Z' });
+  cognito.addUser({ sub: OWNER, email: 'owner@example.com', groups: ['admins'], createdAt: '2026-08-01T10:00:00.000Z' });
+  const store = createStore({ send: createFakeDynamo(), table: 'test' });
+  const clock = { advance: (ms) => (t += ms) };
+  const app = createApp({
+    store,
+    members: createMembers({ send: cognito, userPoolId: 'pool' }),
+    ownerSub: OWNER,
+    now: () => new Date((t += 1000)).toISOString(),
+    makeId: () => `id${String(++n).padStart(6, '0')}`,
+    log: { error() {} },
+  });
+  const call = async (method, path, { as, body } = {}) => {
+    const [rawPath, qs] = path.split('?');
+    const res = await app({
+      rawPath,
+      queryStringParameters: qs ? Object.fromEntries(new URLSearchParams(qs)) : undefined,
+      requestContext: {
+        http: { method },
+        authorizer: as ? { jwt: { claims: { sub: as.sub, ...(as.groups ? { 'cognito:groups': as.groups } : {}) } } } : undefined,
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: res.statusCode, data: res.body ? JSON.parse(res.body) : undefined };
+  };
+  // Alice and Bob each publish a write-up; Alice comments on and likes Bob's
+  const seed = async () => {
+    for (const [who, nameText] of [[AS.alice, 'Alice'], [AS.bob, 'Bob']]) {
+      await call('PUT', '/api/me/profile', { as: who, body: { displayName: nameText } });
+    }
+    await call('PUT', '/api/me/progress/weigh-jupiter', { as: AS.alice, body: { kind: 'experiment', title: 'Weigh Jupiter', status: 'done', notes: 'Jupiter is heavy', published: true } });
+    await call('PUT', '/api/me/progress/time-a-pendulum', { as: AS.bob, body: { kind: 'experiment', title: 'Time a pendulum', status: 'done', notes: 'Tick tock', published: true } });
+    const bobPost = `experiment~${BOB}~time-a-pendulum`;
+    await call('POST', `/api/posts/${bobPost}/comments`, { as: AS.alice, body: { body: 'Nice!' } });
+    await call('POST', `/api/posts/${bobPost}/like`, { as: AS.alice });
+    return { alicePost: `experiment~${ALICE}~weigh-jupiter`, bobPost };
+  };
+  return { call, store, cognito, clock, seed };
+}
+
+test('GET /api/me records last seen at most once a day', async () => {
+  const { call, store, clock } = setupApp();
+  await call('GET', '/api/me', { as: AS.alice });
+  const first = (await store.getAccount(ALICE)).lastSeenAt;
+  await call('GET', '/api/me', { as: AS.alice });
+  assert.equal((await store.getAccount(ALICE)).lastSeenAt, first, 'same day: no new write');
+  clock.advance(24 * 3600 * 1000);
+  await call('GET', '/api/me', { as: AS.alice });
+  assert.notEqual((await store.getAccount(ALICE)).lastSeenAt, first);
+});
+
+test('a suspended member cannot write, but can still read', async () => {
+  const { call, store } = setupApp();
+  await call('PUT', '/api/me/profile', { as: AS.alice, body: { displayName: 'Alice' } });
+  await store.setSuspended(ALICE, true, '2026-11-03T09:00:00.000Z');
+  const r = await call('PUT', '/api/me/profile', { as: AS.alice, body: { displayName: 'Alice 2' } });
+  assert.equal(r.status, 403);
+  assert.equal(r.data.error, 'Your account is suspended');
+  assert.equal((await call('GET', '/api/me', { as: AS.alice })).status, 200);
 });

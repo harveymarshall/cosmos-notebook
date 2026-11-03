@@ -22,6 +22,8 @@ export const LIMITS = {
 export const ITEM_ID = /^[a-z0-9][a-z0-9-]{0,80}$/; // library item ids: "weigh-jupiter", "c-0a1b2c..."
 export const ENTITY_ID = /^[A-Za-z0-9_-]{6,64}$/; // ids we generate
 export const POST_ID = /^(experiment|book|observation)~[A-Za-z0-9-]{1,64}~[A-Za-z0-9_-]{1,81}$/;
+export const SUB = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; // Cognito user ids
+export const COMMENT_ID = /^\d{8,20}-[A-Za-z0-9_-]{6,64}$/;
 
 const fail = (field, msg) => {
   throw new HttpError(400, `${field}: ${msg}`, { field });
