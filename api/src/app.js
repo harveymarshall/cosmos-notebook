@@ -6,8 +6,9 @@
 
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { HttpError, LIMITS, ITEM_ID, ENTITY_ID, POST_ID, str, oneOf, bool, date, url, param } from './validate.js';
+import { HttpError, LIMITS, ITEM_ID, ENTITY_ID, POST_ID, COMMENT_ID, str, oneOf, bool, date, url, param } from './validate.js';
 import { NotFound } from './store.js';
+import { registerAdminMembers } from './admin-members.js';
 
 const EXPERIMENT_STATUS = ['planned', 'in-progress', 'done'];
 const BOOK_STATUS = ['to-read', 'reading', 'finished'];
@@ -44,7 +45,7 @@ const json = (status, data) => ({
   body: data === undefined ? '' : JSON.stringify(data),
 });
 
-export function createApp({ store, now = () => new Date().toISOString(), makeId = newId, log = console } = {}) {
+export function createApp({ store, members, ownerSub = '', now = () => new Date().toISOString(), makeId = newId, log = console } = {}) {
   const routes = [];
   const route = (method, pattern, opts, fn, status = 200) =>
     routes.push({ method, ...compile(pattern), ...opts, fn, status });
@@ -126,10 +127,16 @@ export function createApp({ store, now = () => new Date().toISOString(), makeId 
   });
 
   // ---------- me ----------
-  route('GET', '/api/me', { auth: true }, async ({ user }) => ({
-    user: { sub: user.sub, isAdmin: user.isAdmin },
-    profile: (await store.getProfile(user.sub)) || null,
-  }));
+  route('GET', '/api/me', { auth: true }, async ({ user }) => {
+    // "Last active" for the admin console: at most one write per member per day
+    const account = await store.getAccount(user.sub);
+    const time = now();
+    if (!account?.lastSeenAt || account.lastSeenAt.slice(0, 10) < time.slice(0, 10)) await store.touchAccount(user.sub, time);
+    return {
+      user: { sub: user.sub, isAdmin: user.isAdmin },
+      profile: (await store.getProfile(user.sub)) || null,
+    };
+  });
 
   route('PUT', '/api/me/profile', { auth: true }, async ({ user, body }) => {
     const existing = await store.getProfile(user.sub);
@@ -365,7 +372,7 @@ export function createApp({ store, now = () => new Date().toISOString(), makeId 
 
   route('DELETE', '/api/posts/:postId/comments/:commentId', { auth: true }, async ({ user, params }) => {
     const postId = param(params.postId, POST_ID, 'postId');
-    const commentId = param(params.commentId, /^\d{8,20}-[A-Za-z0-9_-]{6,64}$/, 'commentId');
+    const commentId = param(params.commentId, COMMENT_ID, 'commentId');
     const comment = await store.getComment(postId, commentId);
     if (!comment) throw new HttpError(404, 'Comment not found');
     const postAuthor = postId.split('~')[1];
@@ -409,9 +416,11 @@ export function createApp({ store, now = () => new Date().toISOString(), makeId 
   }, 201);
 
   // ---------- admin ----------
+  // The console is several files joined into one module; only imports.js has import lines.
+  const CONSOLE_FILES = ['imports.js', 'shared.js', 'dashboard.js', 'members.js', 'member.js', 'suggestions.js', 'main.js'];
   route('GET', '/api/admin/console', { auth: true }, async ({ user }) => {
     canSeeAdmin(user);
-    consoleCode ??= readFileSync(new URL('./console/admin.js', import.meta.url), 'utf8');
+    consoleCode ??= CONSOLE_FILES.map((f) => readFileSync(new URL(`./console/${f}`, import.meta.url), 'utf8')).join('\n');
     return { code: consoleCode };
   });
 
@@ -450,6 +459,8 @@ export function createApp({ store, now = () => new Date().toISOString(), makeId 
     return { deleted: removed };
   });
 
+  registerAdminMembers({ route, store, members, ownerSub, now, makeId, log });
+
   // ---------- dispatcher ----------
   return async function handle(event) {
     const method = (event.requestContext?.http?.method || event.httpMethod || 'GET').toUpperCase();
@@ -465,6 +476,13 @@ export function createApp({ store, now = () => new Date().toISOString(), makeId 
         const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])]));
         const user = userFrom(event);
         if (r.auth && !user) throw new HttpError(401, 'Please log in');
+        if (r.admin) canSeeAdmin(user);
+        // A suspended member's sign-in can outlive the sign-out by up to an hour, so every
+        // write checks the account too — admin routes included, so a suspended admin can't
+        // use their still-valid token to keep acting.
+        if (r.auth && method !== 'GET' && (await store.getAccount(user.sub))?.suspended) {
+          throw new HttpError(403, 'Your account is suspended');
+        }
 
         let body = {};
         if (event.body) {

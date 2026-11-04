@@ -97,3 +97,13 @@ variable "create_github_oidc_provider" {
   type        = bool
   default     = true
 }
+
+variable "owner_sub" {
+  description = "Cognito user id (sub) of the site owner. The admin console can't suspend, delete or demote this account, and only it can grant admin. Set in existing.auto.tfvars."
+  type        = string
+
+  validation {
+    condition     = can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", var.owner_sub))
+    error_message = "owner_sub must be a Cognito user id like 1a2b3c4d-...."
+  }
+}

@@ -53,6 +53,32 @@ resource "aws_iam_role_policy" "api_table" {
   policy = data.aws_iam_policy_document.api_table.json
 }
 
+# Member management for the admin console: this one user pool only, and nothing that
+# creates users, sets passwords or changes the pool itself.
+data "aws_iam_policy_document" "api_members" {
+  statement {
+    sid = "ManageMembers"
+    actions = [
+      "cognito-idp:ListUsers",
+      "cognito-idp:ListUsersInGroup",
+      "cognito-idp:AdminDisableUser",
+      "cognito-idp:AdminEnableUser",
+      "cognito-idp:AdminDeleteUser",
+      "cognito-idp:AdminUserGlobalSignOut",
+      "cognito-idp:AdminResetUserPassword",
+      "cognito-idp:AdminAddUserToGroup",
+      "cognito-idp:AdminRemoveUserFromGroup",
+    ]
+    resources = [aws_cognito_user_pool.members.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "api_members" {
+  name   = "member-admin"
+  role   = aws_iam_role.api.name
+  policy = data.aws_iam_policy_document.api_members.json
+}
+
 # Placeholder code for a brand-new install only; the Deploy workflow uploads the real API.
 data "archive_file" "api_placeholder" {
   type        = "zip"
@@ -76,7 +102,7 @@ resource "aws_lambda_function" "api" {
   architectures = ["arm64"]
   handler       = "index.handler"
   memory_size   = 256
-  timeout       = 10
+  timeout       = 29
   role          = aws_iam_role.api.arn
 
   filename         = data.archive_file.api_placeholder.output_path
@@ -84,7 +110,9 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      TABLE_NAME = aws_dynamodb_table.main.name
+      TABLE_NAME   = aws_dynamodb_table.main.name
+      USER_POOL_ID = aws_cognito_user_pool.members.id
+      OWNER_SUB    = var.owner_sub
     }
   }
 

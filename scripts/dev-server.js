@@ -17,6 +17,8 @@ import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from
 import { createApp } from '../api/src/app.js';
 import { createStore } from '../api/src/store.js';
 import { createFakeDynamo } from '../api/src/fake-dynamo.js';
+import { createFakeCognito } from '../api/src/fake-cognito.js';
+import { createMembers } from '../api/src/members.js';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DIST = join(ROOT, 'dist');
@@ -24,13 +26,19 @@ const DATA = join(ROOT, '.dev-data');
 const PORT = Number(process.env.PORT) || 4321;
 mkdirSync(DATA, { recursive: true });
 
-// ---------- API with a local database ----------
-const app = createApp({ store: createStore({ send: createFakeDynamo({ file: join(DATA, 'db.json') }), table: 'dev' }) });
-
 // ---------- pretend Cognito ----------
 const USERS_FILE = join(DATA, 'users.json');
 const users = existsSync(USERS_FILE) ? JSON.parse(readFileSync(USERS_FILE, 'utf8')) : {};
 const saveUsers = () => writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+
+// ---------- API with a local database (after the accounts, so the console can list them) ----------
+const devCognito = createFakeCognito();
+for (const [email, u] of Object.entries(users)) devCognito.addUser({ sub: u.sub, email, groups: u.groups || [] });
+const app = createApp({
+  store: createStore({ send: createFakeDynamo({ file: join(DATA, 'db.json') }), table: 'dev' }),
+  members: createMembers({ send: devCognito, userPoolId: 'dev' }),
+  ownerSub: Object.values(users).find((u) => u.groups?.includes('admins'))?.sub || '',
+});
 const SECRET = existsSync(join(DATA, 'secret')) ? readFileSync(join(DATA, 'secret'), 'utf8') : randomBytes(32).toString('hex');
 writeFileSync(join(DATA, 'secret'), SECRET);
 const refreshTokens = new Map();
@@ -82,6 +90,7 @@ const cognito = {
     const first = Object.keys(users).length === 0;
     users[email] = { sub: randomUUID(), password: hash(Password), confirmed: false, code: code(), groups: first ? ['admins'] : [] };
     saveUsers();
+    devCognito.addUser({ sub: users[email].sub, email, groups: users[email].groups });
     console.log(`\n📧  Confirmation code for ${email}: ${users[email].code}${first ? '   (first account → admin)' : ''}\n`);
     return { UserConfirmed: false, UserSub: users[email].sub, CodeDeliveryDetails: { DeliveryMedium: 'EMAIL', Destination: email } };
   },

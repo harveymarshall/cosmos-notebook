@@ -57,6 +57,11 @@ const VIEWS = {
             toast('We sent you a new confirmation code.');
             return show('confirm');
           }
+          if (err.code === 'PasswordResetRequiredException') {
+            await forgotPassword(email);
+            toast('Your password was reset by the site team. We\'ve emailed you a new code: enter it below with a new password.');
+            return show('reset');
+          }
           throw err;
         }
       }).catch(() => {});

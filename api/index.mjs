@@ -12,8 +12,21 @@ import {
   BatchWriteCommand,
   BatchGetCommand,
 } from '@aws-sdk/lib-dynamodb';
+import {
+  CognitoIdentityProviderClient,
+  ListUsersCommand,
+  ListUsersInGroupCommand,
+  AdminDisableUserCommand,
+  AdminEnableUserCommand,
+  AdminDeleteUserCommand,
+  AdminUserGlobalSignOutCommand,
+  AdminResetUserPasswordCommand,
+  AdminAddUserToGroupCommand,
+  AdminRemoveUserFromGroupCommand,
+} from '@aws-sdk/client-cognito-identity-provider';
 import { createApp } from './src/app.js';
 import { createStore } from './src/store.js';
+import { createMembers } from './src/members.js';
 
 const COMMANDS = {
   Get: GetCommand,
@@ -31,6 +44,24 @@ const doc = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
 });
 const send = (op, params) => doc.send(new COMMANDS[op](params));
 
-const app = createApp({ store: createStore({ send, table: process.env.TABLE_NAME }) });
+const COGNITO = {
+  ListUsers: ListUsersCommand,
+  ListUsersInGroup: ListUsersInGroupCommand,
+  AdminDisableUser: AdminDisableUserCommand,
+  AdminEnableUser: AdminEnableUserCommand,
+  AdminDeleteUser: AdminDeleteUserCommand,
+  AdminUserGlobalSignOut: AdminUserGlobalSignOutCommand,
+  AdminResetUserPassword: AdminResetUserPasswordCommand,
+  AdminAddUserToGroup: AdminAddUserToGroupCommand,
+  AdminRemoveUserFromGroup: AdminRemoveUserFromGroupCommand,
+};
+const cognito = new CognitoIdentityProviderClient({});
+const cognitoSend = (op, params) => cognito.send(new COGNITO[op](params));
+
+const app = createApp({
+  store: createStore({ send, table: process.env.TABLE_NAME }),
+  members: createMembers({ send: cognitoSend, userPoolId: process.env.USER_POOL_ID }),
+  ownerSub: process.env.OWNER_SUB || '',
+});
 
 export const handler = (event) => app(event);
