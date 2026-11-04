@@ -562,6 +562,29 @@ test('reindex is idempotent and admin-only', async () => {
   assert.deepEqual((await call('POST', '/api/admin/maintenance/reindex', { as: AS.owner, body: {} })).data, a.data);
 });
 
+test('suspend that fails at Cognito changes nothing and returns an error', async () => {
+  const { call, store, cognito, seed, reindex } = setupApp();
+  await seed();
+  await reindex();
+  // Make AdminDisableUser fail by making the enabled property setter throw
+  const u = cognito.users.get(ALICE);
+  Object.defineProperty(u, 'enabled', {
+    set() {
+      throw Object.assign(new Error('boom'), { name: 'InternalErrorException' });
+    },
+    get() {
+      return true;
+    },
+    configurable: true,
+  });
+  const r = await call('POST', `/api/admin/members/${ALICE}/suspend`, { as: AS.owner, body: {} });
+  assert.equal(r.status, 502, 'Cognito failure returns 502, not 200');
+  const acct = await store.getAccount(ALICE);
+  assert.equal(acct?.suspended, undefined, 'member is not suspended (no account entry created)');
+  const entries = (await call('GET', '/api/admin/audit', { as: AS.owner })).data.entries;
+  assert.notEqual(entries[0]?.action, 'suspend', 'no suspend entry in audit log');
+});
+
 test('admin console bundle is one valid module, only for admins', async () => {
   const { call } = setupApp();
   assert.equal((await call('GET', '/api/admin/console', { as: AS.alice })).status, 404);

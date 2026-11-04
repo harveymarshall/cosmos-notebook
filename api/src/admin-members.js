@@ -130,10 +130,10 @@ function registerActions({ route, admin, store, members, ownerSub, now, log, sub
     protect(user, m);
     if (!(await store.isReindexed())) throw new HttpError(409, 'Run "Rebuild member index" on the Dashboard first');
     const reason = reasonOf(body);
+    await members.disable(m.username);
+    await members.signOut(m.username);
     let step = 'mark-suspended';
     try {
-      await members.disable(m.username);
-      await members.signOut(m.username);
       await store.setSuspended(m.sub, true, now());
       step = 'hide-content';
       const hidden = await store.setMemberHidden(m.sub, true);
