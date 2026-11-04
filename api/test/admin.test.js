@@ -177,7 +177,8 @@ function setupApp() {
     await call('POST', `/api/posts/${bobPost}/like`, { as: AS.alice });
     return { alicePost: `experiment~${ALICE}~weigh-jupiter`, bobPost };
   };
-  return { call, store, cognito, clock, seed };
+  const reindex = () => call('POST', '/api/admin/maintenance/reindex', { as: AS.owner, body: {} });
+  return { call, store, cognito, clock, seed, reindex };
 }
 
 test('GET /api/me records last seen at most once a day', async () => {
@@ -275,6 +276,44 @@ test('admin can remove any comment, and it is logged', async () => {
   assert.equal(audit[0].reason, 'spam');
 });
 
+test('a hidden comment is not double-decremented when its author is later deleted', async () => {
+  const { call, store, seed, reindex } = setupApp();
+  const { bobPost } = await seed();
+  await reindex();
+  assert.equal((await store.getPost(bobPost)).commentCount, 1);
+  await call('POST', `/api/admin/members/${ALICE}/suspend`, { as: AS.owner, body: {} });
+  assert.equal((await store.getPost(bobPost)).commentCount, 0, 'hiding already decremented it');
+  const del = await call('DELETE', `/api/admin/members/${ALICE}`, { as: AS.owner, body: { confirmEmail: 'alice@example.com' } });
+  assert.equal(del.status, 200);
+  assert.equal((await store.getPost(bobPost)).commentCount, 0, 'deleting the hidden comment must not decrement again');
+});
+
+test('admin removing an already-hidden comment leaves the count unchanged', async () => {
+  const { call, store, seed, reindex } = setupApp();
+  const { bobPost } = await seed();
+  await reindex();
+  await call('POST', `/api/admin/members/${ALICE}/suspend`, { as: AS.owner, body: {} });
+  assert.equal((await store.getPost(bobPost)).commentCount, 0);
+  const { comments } = (await call('GET', `/api/admin/members/${ALICE}`, { as: AS.owner })).data;
+  const r = await call('DELETE', `/api/admin/comments/${bobPost}/${comments[0].commentId}`, { as: AS.owner, body: {} });
+  assert.equal(r.status, 200);
+  assert.equal((await store.getPost(bobPost)).commentCount, 0, 'removing a hidden comment does not decrement');
+});
+
+test('admin remove-comment reports 404 if the comment is already gone when deleting', async () => {
+  const { call, store, seed } = setupApp();
+  const { bobPost } = await seed();
+  const { comments } = (await call('GET', `/api/admin/members/${ALICE}`, { as: AS.owner })).data;
+  const realDeleteComment = store.deleteComment.bind(store);
+  store.deleteComment = async () => false;
+  const r = await call('DELETE', `/api/admin/comments/${bobPost}/${comments[0].commentId}`, { as: AS.owner, body: {} });
+  assert.equal(r.status, 404);
+  assert.equal(r.data.error, 'Comment not found');
+  const audit = (await call('GET', '/api/admin/audit', { as: AS.owner })).data.entries;
+  assert.equal(audit.length, 0, 'no audit entry when the comment was already gone by the time we tried to delete it');
+  store.deleteComment = realDeleteComment;
+});
+
 test('action routes are invisible to members and need a login', async () => {
   const { call } = setupApp();
   for (const [method, path] of [
@@ -313,9 +352,92 @@ test('owner protection and who can change admins', async () => {
   assert.equal(cognito.users.get(BOB).groups.has('admins'), false);
 });
 
+test('a suspended admin is blocked from admin routes too', async () => {
+  const { call, reindex } = setupApp();
+  await reindex();
+  assert.equal((await call('POST', `/api/admin/members/${BOB}/admin`, { as: AS.owner, body: { grant: true } })).status, 200);
+  assert.equal((await call('POST', `/api/admin/members/${BOB}/suspend`, { as: AS.owner, body: {} })).status, 200);
+  const bobAdmin = { sub: BOB, groups: '[admins]' };
+  const r = await call('POST', `/api/admin/members/${ALICE}/reset-password`, { as: bobAdmin, body: {} });
+  assert.equal(r.status, 403);
+  assert.equal(r.data.error, 'Your account is suspended');
+});
+
+test('suspend and delete require the member index to have been rebuilt first', async () => {
+  const { call, seed, reindex } = setupApp();
+  await seed();
+  const beforeSuspend = await call('POST', `/api/admin/members/${ALICE}/suspend`, { as: AS.owner, body: {} });
+  assert.equal(beforeSuspend.status, 409);
+  assert.equal(beforeSuspend.data.error, 'Run "Rebuild member index" on the Dashboard first');
+  const beforeDelete = await call('DELETE', `/api/admin/members/${ALICE}`, { as: AS.owner, body: { confirmEmail: 'alice@example.com' } });
+  assert.equal(beforeDelete.status, 409);
+  await reindex();
+  assert.equal((await call('POST', `/api/admin/members/${ALICE}/suspend`, { as: AS.owner, body: {} })).status, 200);
+});
+
+test('reset-password protects the owner account except from the owner themselves', async () => {
+  const { call } = setupApp();
+  await call('POST', `/api/admin/members/${BOB}/admin`, { as: AS.owner, body: { grant: true } });
+  const bobAdmin = { sub: BOB, groups: '[admins]' };
+  const r = await call('POST', `/api/admin/members/${OWNER}/reset-password`, { as: bobAdmin, body: {} });
+  assert.equal(r.status, 403);
+  assert.equal(r.data.error, "The owner account can't be changed here");
+  const self = await call('POST', `/api/admin/members/${OWNER}/reset-password`, { as: AS.owner, body: {} });
+  assert.equal(self.status, 200);
+});
+
+test('revoking admin signs the member out so the admin claim dies with their session', async () => {
+  const { call, cognito } = setupApp();
+  await call('POST', `/api/admin/members/${BOB}/admin`, { as: AS.owner, body: { grant: true } });
+  assert.equal(cognito.users.get(BOB).signedOutAt, undefined);
+  const r = await call('POST', `/api/admin/members/${BOB}/admin`, { as: AS.owner, body: { grant: false } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.note, 'They have been signed out');
+  assert.ok(cognito.users.get(BOB).signedOutAt);
+});
+
+test("a deleted member's token can no longer write, even though it's still valid", async () => {
+  const { call, seed, reindex } = setupApp();
+  await seed();
+  await reindex();
+  const r = await call('DELETE', `/api/admin/members/${ALICE}`, { as: AS.owner, body: { confirmEmail: 'alice@example.com' } });
+  assert.equal(r.status, 200);
+  const put = await call('PUT', '/api/me/profile', { as: AS.alice, body: { displayName: 'Alice again' } });
+  assert.equal(put.status, 403);
+  assert.equal(put.data.error, 'Your account is suspended');
+});
+
+test('suspend and unsuspend audit a partial result when a step fails, with the right step name', async () => {
+  const { call, store, cognito, seed, reindex } = setupApp();
+  await seed();
+  await reindex();
+  const realSetSuspended = store.setSuspended.bind(store);
+  store.setSuspended = async () => {
+    throw new Error('dynamo down');
+  };
+  const r = await call('POST', `/api/admin/members/${ALICE}/suspend`, { as: AS.owner, body: {} });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data, { partial: true, step: 'mark-suspended' });
+  assert.equal(cognito.users.get(ALICE).enabled, false, 'still disabled even though the suspend flag write failed');
+  let entry = (await call('GET', '/api/admin/audit', { as: AS.owner })).data.entries[0];
+  assert.deepEqual([entry.action, entry.detail.partial], ['suspend', 'mark-suspended']);
+  store.setSuspended = realSetSuspended;
+
+  assert.equal((await call('POST', `/api/admin/members/${ALICE}/suspend`, { as: AS.owner, body: {} })).status, 200);
+  store.setMemberHidden = async () => {
+    throw new Error('dynamo down');
+  };
+  const u = await call('POST', `/api/admin/members/${ALICE}/unsuspend`, { as: AS.owner, body: {} });
+  assert.equal(u.status, 200);
+  assert.deepEqual(u.data, { partial: true, step: 'show-content' });
+  entry = (await call('GET', '/api/admin/audit', { as: AS.owner })).data.entries[0];
+  assert.deepEqual([entry.action, entry.detail.partial], ['unsuspend', 'show-content']);
+});
+
 test('suspend hides content and blocks sign-in; unsuspend restores both', async () => {
-  const { call, cognito, seed } = setupApp();
+  const { call, cognito, seed, reindex } = setupApp();
   const { bobPost } = await seed();
+  await reindex();
   let r = await call('POST', `/api/admin/members/${ALICE}/suspend`, { as: AS.owner, body: { reason: 'cooling off' } });
   assert.equal(r.status, 200);
   assert.deepEqual(r.data, { suspended: true, hidden: { posts: 1, comments: 1 } });
@@ -338,8 +460,9 @@ test('suspend hides content and blocks sign-in; unsuspend restores both', async 
 });
 
 test('suspend reports a partial result when hiding content fails', async () => {
-  const { call, store, seed } = setupApp();
+  const { call, store, seed, reindex } = setupApp();
   await seed();
+  await reindex();
   store.setMemberHidden = async () => {
     throw new Error('dynamo down');
   };
@@ -358,8 +481,9 @@ test('reset password', async () => {
 });
 
 test('delete removes every trace of a member and keeps counts right', async () => {
-  const { call, store, cognito, seed } = setupApp();
+  const { call, store, cognito, seed, reindex } = setupApp();
   const { bobPost } = await seed();
+  await reindex();
   await call('POST', '/api/me/observations', { as: AS.alice, body: { title: 'The Moon' } });
   await call('POST', '/api/submissions', { as: AS.alice, body: { type: 'book', title: 'Cosmos', summary: 'A classic book about space', track: 'astro', link: 'https://example.com/cosmos' } });
   await call('POST', '/api/submissions', { as: AS.alice, body: { type: 'book', title: 'Pale Blue Dot', summary: 'Another classic book', track: 'astro', link: 'https://example.com/pbd' } });
@@ -388,8 +512,9 @@ test('delete removes every trace of a member and keeps counts right', async () =
 });
 
 test('a delete that failed part-way can be run again', async () => {
-  const { call, cognito, seed } = setupApp();
+  const { call, cognito, seed, reindex } = setupApp();
   await seed();
+  await reindex();
   const realRemove = cognito.users.delete.bind(cognito.users);
   let fail = true;
   cognito.users.delete = (k) => {
@@ -409,8 +534,9 @@ test('a delete that failed part-way can be run again', async () => {
 });
 
 test('a delete that fails on a store step is reported with that step, and can be re-run', async () => {
-  const { call, store, cognito, seed } = setupApp();
+  const { call, store, cognito, seed, reindex } = setupApp();
   await seed();
+  await reindex();
   const realDeleteUserItems = store.deleteUserItems.bind(store);
   let fail = true;
   store.deleteUserItems = async (sub) => {

@@ -478,8 +478,9 @@ export function createApp({ store, members, ownerSub = '', now = () => new Date(
         if (r.auth && !user) throw new HttpError(401, 'Please log in');
         if (r.admin) canSeeAdmin(user);
         // A suspended member's sign-in can outlive the sign-out by up to an hour, so every
-        // write checks the account too.
-        else if (r.auth && method !== 'GET' && (await store.getAccount(user.sub))?.suspended) {
+        // write checks the account too — admin routes included, so a suspended admin can't
+        // use their still-valid token to keep acting.
+        if (r.auth && method !== 'GET' && (await store.getAccount(user.sub))?.suspended) {
           throw new HttpError(403, 'Your account is suspended');
         }
 

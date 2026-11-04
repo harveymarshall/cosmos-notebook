@@ -371,28 +371,33 @@ export function createStore({ send, table }) {
       return item ? { ...strip(item), commentId } : undefined;
     },
 
+    /** A hidden comment was already subtracted from commentCount when it was hidden
+     *  (see setMemberHidden), so deleting it must not subtract again. */
     async deleteComment(postId, commentId) {
-      try {
-        await send('TransactWrite', {
-          TransactItems: [
-            {
-              Delete: {
-                TableName: T,
-                Key: { PK: `POST#${postId}`, SK: `CMT#${commentId}` },
-                ConditionExpression: 'attribute_exists(PK)',
-              },
-            },
-            {
-              Update: {
-                TableName: T,
-                Key: { PK: `POST#${postId}`, SK: 'META' },
-                UpdateExpression: 'ADD commentCount :minus',
-                ConditionExpression: 'attribute_exists(PK)',
-                ExpressionAttributeValues: { ':minus': -1 },
-              },
-            },
-          ],
+      const comment = await get(`POST#${postId}`, `CMT#${commentId}`);
+      if (!comment) return false;
+      const transactItems = [
+        {
+          Delete: {
+            TableName: T,
+            Key: { PK: `POST#${postId}`, SK: `CMT#${commentId}` },
+            ConditionExpression: 'attribute_exists(PK)',
+          },
+        },
+      ];
+      if (comment.hidden !== true) {
+        transactItems.push({
+          Update: {
+            TableName: T,
+            Key: { PK: `POST#${postId}`, SK: 'META' },
+            UpdateExpression: 'ADD commentCount :minus',
+            ConditionExpression: 'attribute_exists(PK)',
+            ExpressionAttributeValues: { ':minus': -1 },
+          },
         });
+      }
+      try {
+        await send('TransactWrite', { TransactItems: transactItems });
         return true;
       } catch (err) {
         if (err.name === 'TransactionCanceledException') return false;
@@ -541,6 +546,14 @@ export function createStore({ send, table }) {
       await this.putSubmission({ ...s, authorSub: 'deleted', authorName: 'A former member' });
     },
 
+    // ---------- maintenance ----------
+    async markReindexed(at) {
+      await put({ PK: 'MAINT', SK: 'REINDEX', entity: 'maint', at });
+    },
+    async isReindexed() {
+      return !!(await get('MAINT', 'REINDEX'));
+    },
+
     // ---------- audit log ----------
     async putAudit(entry) {
       await put({ PK: 'AUDIT', SK: `${entry.at}#${entry.id}`, entity: 'audit', ...entry });
@@ -569,17 +582,22 @@ export function createStore({ send, table }) {
     async reindexPost(postId) {
       const items = await queryAll({ KeyConditionExpression: 'PK = :pk', ExpressionAttributeValues: { ':pk': `POST#${postId}` } }, 100000);
       const counts = { posts: 0, comments: 0, likes: 0 };
+      const tryUpdate = async (key, fields, countKey) => {
+        try {
+          await update(key, fields, { ConditionExpression: 'attribute_exists(PK)' });
+          counts[countKey]++;
+        } catch (err) {
+          if (err.name !== 'ConditionalCheckFailedException') throw err; // gone since we queried
+        }
+      };
       for (const i of items) {
         const key = { PK: i.PK, SK: i.SK };
         if (i.SK === 'META') {
-          await update(key, { GSI2PK: `USER#${i.authorSub}`, GSI2SK: `POST#${i.publishedAt}#${postId}` });
-          counts.posts++;
+          await tryUpdate(key, { GSI2PK: `USER#${i.authorSub}`, GSI2SK: `POST#${i.publishedAt}#${postId}` }, 'posts');
         } else if (i.SK.startsWith('CMT#')) {
-          await update(key, { postId, GSI2PK: `USER#${i.authorSub}`, GSI2SK: `CMT#${i.createdAt}#${postId}#${i.SK.slice(4)}` });
-          counts.comments++;
+          await tryUpdate(key, { postId, GSI2PK: `USER#${i.authorSub}`, GSI2SK: `CMT#${i.createdAt}#${postId}#${i.SK.slice(4)}` }, 'comments');
         } else if (i.SK.startsWith('LIKE#')) {
-          await update(key, { postId, GSI2PK: `USER#${i.sub}`, GSI2SK: `LIKE#${i.at}#${postId}` });
-          counts.likes++;
+          await tryUpdate(key, { postId, GSI2PK: `USER#${i.sub}`, GSI2SK: `LIKE#${i.at}#${postId}` }, 'likes');
         }
       }
       return counts;

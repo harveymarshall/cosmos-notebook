@@ -115,7 +115,7 @@ export function registerAdminMembers({ route, store, members, ownerSub, now, mak
     const commentId = param(params.commentId, COMMENT_ID, 'commentId');
     const comment = await store.getComment(postId, commentId);
     if (!comment) throw new HttpError(404, 'Comment not found');
-    await store.deleteComment(postId, commentId);
+    if (!(await store.deleteComment(postId, commentId))) throw new HttpError(404, 'Comment not found');
     await audit(user, 'remove-comment', comment.authorSub, { reason: reasonOf(body), detail: { postId, commentId } });
     return { deleted: true };
   });
@@ -128,33 +128,44 @@ function registerActions({ route, admin, store, members, ownerSub, now, log, sub
   route('POST', '/api/admin/members/:sub/suspend', admin, async ({ user, params, body }) => {
     const m = await findMember(subOf(params));
     protect(user, m);
+    if (!(await store.isReindexed())) throw new HttpError(409, 'Run "Rebuild member index" on the Dashboard first');
     const reason = reasonOf(body);
-    await members.disable(m.username);
-    await members.signOut(m.username);
-    await store.setSuspended(m.sub, true, now());
+    let step = 'mark-suspended';
     try {
+      await members.disable(m.username);
+      await members.signOut(m.username);
+      await store.setSuspended(m.sub, true, now());
+      step = 'hide-content';
       const hidden = await store.setMemberHidden(m.sub, true);
       await audit(user, 'suspend', m.sub, { reason, detail: hidden });
       return { suspended: true, hidden };
     } catch (err) {
       log.error?.(err);
-      await audit(user, 'suspend', m.sub, { reason, detail: { partial: 'hide-content' } });
-      return { partial: true, step: 'hide-content' };
+      await audit(user, 'suspend', m.sub, { reason, detail: { partial: step } });
+      return { partial: true, step };
     }
   });
 
   route('POST', '/api/admin/members/:sub/unsuspend', admin, async ({ user, params, body }) => {
     const m = await findMember(subOf(params));
     protect(user, m);
+    const reason = reasonOf(body);
     await members.enable(m.username);
     await store.setSuspended(m.sub, false, now());
-    const shown = await store.setMemberHidden(m.sub, false);
-    await audit(user, 'unsuspend', m.sub, { reason: reasonOf(body), detail: shown });
-    return { suspended: false, shown };
+    try {
+      const shown = await store.setMemberHidden(m.sub, false);
+      await audit(user, 'unsuspend', m.sub, { reason, detail: shown });
+      return { suspended: false, shown };
+    } catch (err) {
+      log.error?.(err);
+      await audit(user, 'unsuspend', m.sub, { reason, detail: { partial: 'show-content' } });
+      return { partial: true, step: 'show-content' };
+    }
   });
 
   route('POST', '/api/admin/members/:sub/reset-password', admin, async ({ user, params, body }) => {
     const m = await findMember(subOf(params));
+    if (ownerSub && m.sub === ownerSub && user.sub !== ownerSub) throw new HttpError(403, "The owner account can't be changed here");
     await members.resetPassword(m.username);
     await audit(user, 'reset-password', m.sub, { reason: reasonOf(body) });
     return { reset: true };
@@ -165,25 +176,38 @@ function registerActions({ route, admin, store, members, ownerSub, now, log, sub
     if (ownerSub && m.sub === ownerSub) throw new HttpError(403, "The owner account can't be changed here");
     if (!ownerSub || user.sub !== ownerSub) throw new HttpError(403, 'Only the owner can change admins');
     const grant = body?.grant === true;
-    await (grant ? members.addAdmin(m.username) : members.removeAdmin(m.username));
+    if (grant) {
+      await members.addAdmin(m.username);
+    } else {
+      await members.removeAdmin(m.username);
+      await members.signOut(m.username); // the admin claim dies with their sessions
+    }
     await audit(user, grant ? 'grant-admin' : 'revoke-admin', m.sub, { reason: reasonOf(body) });
-    return { isAdmin: grant, note: 'Takes effect the next time they sign in' };
+    return { isAdmin: grant, note: grant ? 'Takes effect the next time they sign in' : 'They have been signed out' };
   });
 
   // Each step is safe to repeat and the login goes last, so a failed delete can be re-run.
   // A failure part-way is audited with the step reached, and reported as a 500 (502 for a
   // Cognito failure) carrying { step, removed } so the caller knows what to re-run.
+  // Sign-out/disable goes first so a token already in flight stops being able to write even
+  // if a later step fails; a tombstone (setSuspended) is written right after the member's own
+  // items are gone, so the same still-valid token is rejected by the dispatcher's suspended
+  // check from then on.
   route('DELETE', '/api/admin/members/:sub', admin, async ({ user, params, body }) => {
     const m = await findMember(subOf(params));
     protect(user, m);
+    if (!(await store.isReindexed())) throw new HttpError(409, 'Run "Rebuild member index" on the Dashboard first');
     const confirm = str(body, 'confirmEmail', { required: true, max: 320 }).toLowerCase();
     if (confirm !== m.email.toLowerCase()) {
       throw new HttpError(400, "confirmEmail: doesn't match this member's email", { field: 'confirmEmail' });
     }
     const reason = reasonOf(body);
     const removed = { posts: 0, comments: 0, likes: 0, submissions: 0, anonymised: 0, items: 0 };
-    let step = 'posts';
+    let step = 'sign-out';
     try {
+      await members.disable(m.username);
+      await members.signOut(m.username);
+      step = 'posts';
       for (const p of await store.memberPosts(m.sub)) {
         await store.deletePost(p.postId);
         removed.posts++;
@@ -210,11 +234,16 @@ function registerActions({ route, admin, store, members, ownerSub, now, log, sub
       }
       step = 'user-items';
       removed.items = await store.deleteUserItems(m.sub);
+      await store.setSuspended(m.sub, true, now()); // tombstone: a still-valid token can't write after this
       step = 'remove-login';
       await members.remove(m.username);
     } catch (err) {
       if (!(err instanceof HttpError)) log.error?.(err);
-      await audit(user, 'delete', m.sub, { reason, detail: { partial: step, removed } });
+      try {
+        await audit(user, 'delete', m.sub, { reason, detail: { partial: step, removed } });
+      } catch (auditErr) {
+        log.error?.(auditErr);
+      }
       throw new HttpError(err.status || 500, err.status ? err.message : 'Delete stopped part-way — run it again to finish', { step, removed });
     }
     await audit(user, 'delete', m.sub, { reason, detail: removed });
@@ -229,6 +258,7 @@ function registerActions({ route, admin, store, members, ownerSub, now, log, sub
       total.comments += c.comments;
       total.likes += c.likes;
     }
+    await store.markReindexed(now());
     await audit(user, 'reindex', '', { detail: total });
     return total;
   });
