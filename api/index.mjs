@@ -16,7 +16,6 @@ import {
   CognitoIdentityProviderClient,
   ListUsersCommand,
   ListUsersInGroupCommand,
-  AdminGetUserCommand,
   AdminDisableUserCommand,
   AdminEnableUserCommand,
   AdminDeleteUserCommand,
@@ -48,7 +47,6 @@ const send = (op, params) => doc.send(new COMMANDS[op](params));
 const COGNITO = {
   ListUsers: ListUsersCommand,
   ListUsersInGroup: ListUsersInGroupCommand,
-  AdminGetUser: AdminGetUserCommand,
   AdminDisableUser: AdminDisableUserCommand,
   AdminEnableUser: AdminEnableUserCommand,
   AdminDeleteUser: AdminDeleteUserCommand,

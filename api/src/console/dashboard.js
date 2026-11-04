@@ -28,7 +28,7 @@ ${entries.length ? `<ul class="adm-list">${entries.map(auditLine).join('')}</ul>
     busy(e.target, async () => {
       const r = await post('/admin/maintenance/reindex', {});
       toast(`Indexed ${r.posts} posts, ${r.comments} comments, ${r.likes} likes`);
-      renderDashboard();
+      renderDashboard().catch(showError);
     }).catch(() => {});
   });
 }
